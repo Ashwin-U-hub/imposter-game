@@ -17,13 +17,9 @@ type Screen =
   | "result"
   | "winner";
 
-type Role = "player" | "imposter";
+type GameMode = "default" | "custom";
 
-type GamePlayer = {
-  id: number;
-  name: string;
-  role: Role;
-};
+type Role = "player" | "imposter";
 
 type Winner = "players" | "imposters" | null;
 
@@ -32,6 +28,12 @@ type RoundResultType =
   | "imposter-eliminated"
   | "wrong-guess"
   | null;
+
+type GamePlayer = {
+  id: number;
+  name: string;
+  role: Role;
+};
 
 const SAVED_PLAYERS_KEY =
   "imposter-saved-players-v1";
@@ -51,7 +53,9 @@ function randomInt(maxExclusive: number) {
   return values[0] % maxExclusive;
 }
 
-function shuffle<T>(items: T[]): T[] {
+function shuffle<T>(
+  items: T[]
+): T[] {
   const result = [...items];
 
   for (
@@ -93,7 +97,9 @@ function getRecommendedImposters(
   playerCount: number
 ) {
   const max =
-    getMaxImposters(playerCount);
+    getMaxImposters(
+      playerCount
+    );
 
   const recommended =
     Math.max(
@@ -123,7 +129,8 @@ function uniqueNames(
   const seen =
     new Set<string>();
 
-  const result: string[] = [];
+  const result: string[] =
+    [];
 
   for (
     const rawName of names
@@ -153,7 +160,8 @@ function uniqueNames(
 function parseRosterValue(
   value: string
 ): string[] {
-  const text = value.trim();
+  const text =
+    value.trim();
 
   if (!text) {
     return [];
@@ -172,8 +180,9 @@ function parseRosterValue(
     }
 
     return uniqueNames(
-      parsed.map((item) =>
-        String(item)
+      parsed.map(
+        (item) =>
+          String(item)
       )
     );
   }
@@ -204,7 +213,9 @@ function parseRosterValue(
   if (urlMatch) {
     try {
       const url =
-        new URL(urlMatch[0]);
+        new URL(
+          urlMatch[0]
+        );
 
       const roster =
         url.searchParams.get(
@@ -235,7 +246,17 @@ export default function Home() {
     screen,
     setScreen,
   ] =
-    useState<Screen>("home");
+    useState<Screen>(
+      "home"
+    );
+
+  const [
+    gameMode,
+    setGameMode,
+  ] =
+    useState<GameMode>(
+      "default"
+    );
 
   /*
     SAVED PLAYER SYSTEM
@@ -296,7 +317,7 @@ export default function Home() {
     useState<string[]>([]);
 
   /*
-    GAME SETTINGS
+    COMMON SETTINGS
   */
 
   const [
@@ -318,6 +339,34 @@ export default function Home() {
     useState(false);
 
   /*
+    CUSTOM SETTINGS
+  */
+
+  const [
+    randomClueOrder,
+    setRandomClueOrder,
+  ] =
+    useState(true);
+
+  const [
+    allowSelfVote,
+    setAllowSelfVote,
+  ] =
+    useState(false);
+
+  const [
+    customVotingLimitEnabled,
+    setCustomVotingLimitEnabled,
+  ] =
+    useState(false);
+
+  const [
+    customVotingLimit,
+    setCustomVotingLimit,
+  ] =
+    useState(1);
+
+  /*
     CURRENT GAME
   */
 
@@ -325,7 +374,9 @@ export default function Home() {
     gamePlayers,
     setGamePlayers,
   ] =
-    useState<GamePlayer[]>([]);
+    useState<
+      GamePlayer[]
+    >([]);
 
   const [
     secretWord,
@@ -387,7 +438,9 @@ export default function Home() {
     clueOrder,
     setClueOrder,
   ] =
-    useState<GamePlayer[]>([]);
+    useState<
+      GamePlayer[]
+    >([]);
 
   /*
     VOTING
@@ -397,7 +450,9 @@ export default function Home() {
     voteOrder,
     setVoteOrder,
   ] =
-    useState<GamePlayer[]>([]);
+    useState<
+      GamePlayer[]
+    >([]);
 
   const [
     voteIndex,
@@ -418,7 +473,10 @@ export default function Home() {
     setVotes,
   ] =
     useState<
-      Record<number, number>
+      Record<
+        number,
+        number
+      >
     >({});
 
   const [
@@ -457,7 +515,9 @@ export default function Home() {
     winner,
     setWinner,
   ] =
-    useState<Winner>(null);
+    useState<Winner>(
+      null
+    );
 
   const [
     isStarting,
@@ -487,9 +547,11 @@ export default function Home() {
           SELECTED_PLAYERS_KEY
         );
 
-      let saved: string[] = [];
+      let saved: string[] =
+        [];
 
-      let selected: string[] = [];
+      let selected: string[] =
+        [];
 
       if (storedSaved) {
         const parsed =
@@ -498,32 +560,42 @@ export default function Home() {
           );
 
         if (
-          Array.isArray(parsed)
+          Array.isArray(
+            parsed
+          )
         ) {
           saved =
             uniqueNames(
               parsed.map(
                 (item) =>
-                  String(item)
+                  String(
+                    item
+                  )
               )
             );
         }
       }
 
-      if (storedSelected) {
+      if (
+        storedSelected
+      ) {
         const parsed =
           JSON.parse(
             storedSelected
           );
 
         if (
-          Array.isArray(parsed)
+          Array.isArray(
+            parsed
+          )
         ) {
           selected =
             uniqueNames(
               parsed.map(
                 (item) =>
-                  String(item)
+                  String(
+                    item
+                  )
               )
             );
         }
@@ -551,14 +623,10 @@ export default function Home() {
         selected
       );
 
-      /*
-        Detect a roster sent
-        from another phone.
-      */
-
       const params =
         new URLSearchParams(
-          window.location.search
+          window.location
+            .search
         );
 
       const sharedRoster =
@@ -566,7 +634,9 @@ export default function Home() {
           "roster"
         );
 
-      if (sharedRoster) {
+      if (
+        sharedRoster
+      ) {
         try {
           const parsed =
             JSON.parse(
@@ -581,30 +651,41 @@ export default function Home() {
             setIncomingSharedPlayers(
               uniqueNames(
                 parsed.map(
-                  (item) =>
-                    String(item)
+                  (
+                    item
+                  ) =>
+                    String(
+                      item
+                    )
                 )
               )
             );
           }
         } catch {
-          // Invalid roster ignored.
+          // Ignore bad roster.
         }
       }
     } catch {
-      setSavedPlayers([]);
+      setSavedPlayers(
+        []
+      );
+
       setPlayers([]);
     } finally {
-      setRosterLoaded(true);
+      setRosterLoaded(
+        true
+      );
     }
   }, []);
 
   /*
-    SAVE PLAYER ROSTER
+    SAVE ROSTER
   */
 
   useEffect(() => {
-    if (!rosterLoaded) {
+    if (
+      !rosterLoaded
+    ) {
       return;
     }
 
@@ -616,7 +697,7 @@ export default function Home() {
         )
       );
     } catch {
-      // Ignore storage failure.
+      // Ignore.
     }
   }, [
     savedPlayers,
@@ -628,7 +709,9 @@ export default function Home() {
   */
 
   useEffect(() => {
-    if (!rosterLoaded) {
+    if (
+      !rosterLoaded
+    ) {
       return;
     }
 
@@ -640,7 +723,7 @@ export default function Home() {
         )
       );
     } catch {
-      // Ignore storage failure.
+      // Ignore.
     }
   }, [
     players,
@@ -690,9 +773,24 @@ export default function Home() {
       voteIndex
     ];
 
-  /*
-    GENERAL HELPERS
-  */
+  function buildClueOrder(
+    source: GamePlayer[]
+  ) {
+    if (
+      randomClueOrder
+    ) {
+      return shuffle(
+        source
+      );
+    }
+
+    return [
+      ...source,
+    ].sort(
+      (a, b) =>
+        a.id - b.id
+    );
+  }
 
   function syncImposterCount(
     selectedCount: number
@@ -702,13 +800,56 @@ export default function Home() {
         selectedCount
       );
 
+    const nextCount =
+      Math.min(
+        imposterCount,
+        newMaximum
+      );
+
     setImposterCount(
+      nextCount
+    );
+
+    setCustomVotingLimit(
       (current) =>
-        Math.min(
+        Math.max(
           current,
-          newMaximum
+          nextCount
         )
     );
+  }
+
+  /*
+    MODE SELECTION
+  */
+
+  function chooseMode(
+    mode: GameMode
+  ) {
+    setGameMode(mode);
+
+    /*
+      Advanced settings do
+      not affect Default.
+    */
+
+    if (
+      mode === "default"
+    ) {
+      setRandomClueOrder(
+        true
+      );
+
+      setAllowSelfVote(
+        false
+      );
+
+      setCustomVotingLimitEnabled(
+        false
+      );
+    }
+
+    setScreen("setup");
   }
 
   function goBack() {
@@ -735,7 +876,7 @@ export default function Home() {
   }
 
   /*
-    SAVED PLAYER FUNCTIONS
+    SAVED PLAYERS
   */
 
   function addSavedPlayer() {
@@ -772,10 +913,11 @@ export default function Home() {
       name,
     ];
 
-    const updatedSelected = [
-      ...players,
-      name,
-    ];
+    const updatedSelected =
+      [
+        ...players,
+        name,
+      ];
 
     setSavedPlayers(
       updatedSaved
@@ -863,6 +1005,10 @@ export default function Home() {
     setPlayers([]);
 
     setImposterCount(1);
+
+    setCustomVotingLimit(
+      1
+    );
   }
 
   /*
@@ -989,19 +1135,15 @@ export default function Home() {
       merged
     );
 
-    if (added > 0) {
-      setRosterMessage(
-        `${added} new ${
-          added === 1
-            ? "player"
-            : "players"
-        } imported.`
-      );
-    } else {
-      setRosterMessage(
-        "All shared players are already saved on this device."
-      );
-    }
+    setRosterMessage(
+      added > 0
+        ? `${added} new ${
+            added === 1
+              ? "player"
+              : "players"
+          } imported.`
+        : "All shared players are already saved on this device."
+    );
 
     setIncomingSharedPlayers(
       []
@@ -1045,20 +1187,59 @@ export default function Home() {
   */
 
   function increaseImposters() {
+    const next =
+      Math.min(
+        imposterCount + 1,
+        maxImposters
+      );
+
     setImposterCount(
+      next
+    );
+
+    setCustomVotingLimit(
       (current) =>
-        Math.min(
-          current + 1,
-          maxImposters
+        Math.max(
+          current,
+          next
         )
     );
   }
 
   function decreaseImposters() {
     setImposterCount(
+      Math.max(
+        1,
+        imposterCount - 1
+      )
+    );
+  }
+
+  /*
+    CUSTOM VOTING LIMIT
+  */
+
+  const maximumCustomVotingRounds =
+    Math.max(
+      20,
+      players.length
+    );
+
+  function increaseCustomVotingLimit() {
+    setCustomVotingLimit(
+      (current) =>
+        Math.min(
+          maximumCustomVotingRounds,
+          current + 1
+        )
+    );
+  }
+
+  function decreaseCustomVotingLimit() {
+    setCustomVotingLimit(
       (current) =>
         Math.max(
-          1,
+          imposterCount,
           current - 1
         )
     );
@@ -1097,17 +1278,6 @@ export default function Home() {
         return;
       }
 
-      const playerIds =
-        cleanedPlayers.map(
-          (_, index) =>
-            index
-        );
-
-      const shuffledIds =
-        shuffle(
-          playerIds
-        );
-
       const safeImposterCount =
         Math.min(
           imposterCount,
@@ -1116,8 +1286,16 @@ export default function Home() {
           )
         );
 
+      const playerIds =
+        cleanedPlayers.map(
+          (_, index) =>
+            index
+        );
+
       const selectedImposters =
-        shuffledIds.slice(
+        shuffle(
+          playerIds
+        ).slice(
           0,
           safeImposterCount
         );
@@ -1145,12 +1323,31 @@ export default function Home() {
           })
         );
 
+      const chosenVotingLimit =
+        gameMode ===
+          "custom" &&
+        !eliminationMode &&
+        customVotingLimitEnabled
+          ? Math.max(
+              safeImposterCount,
+              customVotingLimit
+            )
+          : safeImposterCount;
+
       setPlayers(
         cleanedPlayers
       );
 
       setImposterCount(
         safeImposterCount
+      );
+
+      setCustomVotingLimit(
+        (current) =>
+          Math.max(
+            current,
+            safeImposterCount
+          )
       );
 
       setGamePlayers(
@@ -1181,7 +1378,7 @@ export default function Home() {
       );
 
       setMaxVotingRounds(
-        safeImposterCount
+        chosenVotingLimit
       );
 
       setClueOrder([]);
@@ -1246,7 +1443,7 @@ export default function Home() {
     }
 
     setClueOrder(
-      shuffle(
+      buildClueOrder(
         gamePlayers
       )
     );
@@ -1255,7 +1452,7 @@ export default function Home() {
   }
 
   /*
-    START VOTING
+    VOTING
   */
 
   function startVoting() {
@@ -1314,10 +1511,6 @@ export default function Home() {
     setScreen("vote");
   }
 
-  /*
-    PRIVATE VOTING
-  */
-
   function submitPrivateVote() {
     if (
       selectedVoteId ===
@@ -1373,8 +1566,10 @@ export default function Home() {
     >
   ) {
     const counts:
-      Record<number, number> =
-      {};
+      Record<
+        number,
+        number
+      > = {};
 
     Object.values(
       finalVotes
@@ -1516,29 +1711,6 @@ export default function Home() {
 
     /*
       ELIMINATION MODE ON
-
-      Whoever is voted is
-      eliminated.
-
-      Normal player:
-      eliminated + spectator.
-
-      Imposter:
-      eliminated + spectator.
-
-      SINGLE IMPOSTER:
-      Continue at
-      1 Imposter + 2 normals.
-
-      Imposter wins at
-      1 Imposter + 1 normal.
-
-      MULTIPLE IMPOSTERS:
-      Continue while at least
-      3 normal players remain.
-
-      Imposters win when only
-      2 normal players remain.
     */
 
     if (
@@ -1601,10 +1773,6 @@ export default function Home() {
         remainingImposters ===
         0
       ) {
-        /*
-          All Imposters dead.
-        */
-
         setWinner(
           "players"
         );
@@ -1615,10 +1783,8 @@ export default function Home() {
           1
       ) {
         /*
-          Single surviving
-          Imposter wins only
-          when only one normal
-          player remains.
+          1 Imposter + 1 normal
+          = Imposter wins.
         */
 
         setWinner(
@@ -1631,20 +1797,15 @@ export default function Home() {
           2
       ) {
         /*
-          Multiple surviving
-          Imposters win when
-          only two normal
-          players remain.
+          Multiple Imposters +
+          only 2 normal players
+          = Imposters win.
         */
 
         setWinner(
           "imposters"
         );
       } else {
-        /*
-          Continue game.
-        */
-
         setWinner(null);
       }
 
@@ -1655,24 +1816,6 @@ export default function Home() {
 
     /*
       ELIMINATION MODE OFF
-
-      Number of voting rounds
-      =
-      original number of
-      Imposters.
-
-      Wrong player:
-      not eliminated.
-
-      Correct Imposter:
-      caught and becomes
-      spectator.
-
-      All Imposters caught:
-      Players win.
-
-      Voting rounds expire:
-      Imposters win.
     */
 
     const nextRoundsUsed =
@@ -1766,7 +1909,7 @@ export default function Home() {
   }
 
   /*
-    CONTINUE NEXT ROUND
+    NEXT ROUND
   */
 
   function continueAfterResult() {
@@ -1790,7 +1933,7 @@ export default function Home() {
     );
 
     setClueOrder(
-      shuffle(
+      buildClueOrder(
         remainingPlayers
       )
     );
@@ -1869,13 +2012,6 @@ export default function Home() {
 
     setWinner(null);
 
-    /*
-      Important:
-      saved player names
-      and selected names
-      remain.
-    */
-
     setScreen("setup");
   }
 
@@ -1894,8 +2030,10 @@ export default function Home() {
   }
 
   /*
-    AVAILABLE VOTING
-    CANDIDATES
+    PRIVATE VOTE CANDIDATES
+
+    Custom Mode can enable
+    self-voting.
   */
 
   const availablePrivateVoteCandidates =
@@ -1908,8 +2046,11 @@ export default function Home() {
             voteCandidates.includes(
               player.id
             ) &&
-            player.id !==
-              currentVoter.id
+            (
+              allowSelfVote ||
+              player.id !==
+                currentVoter.id
+            )
         )
       : [];
 
@@ -1936,6 +2077,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#08080b] text-white">
+
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-6 py-8">
 
         {/* HOME */}
@@ -2093,35 +2235,86 @@ export default function Home() {
               Choose game mode
             </h1>
 
-            <button
-              onClick={() =>
-                setScreen(
-                  "setup"
-                )
-              }
-              className="mt-10 w-full rounded-3xl border border-violet-500/40 bg-violet-500/10 p-6 text-left"
-            >
+            <div className="mt-10 space-y-4">
 
-              <div className="text-3xl">
-                ⚡
+              <button
+                onClick={() =>
+                  chooseMode(
+                    "default"
+                  )
+                }
+                className="w-full rounded-3xl border border-violet-500/40 bg-violet-500/10 p-6 text-left"
+              >
+
+                <div className="flex items-start justify-between gap-3">
+
+                  <div className="text-3xl">
+                    ⚡
+                  </div>
+
+                  <span className="rounded-full bg-violet-500 px-3 py-1 text-[10px] font-black">
+                    QUICK
+                  </span>
+
+                </div>
+
+                <h2 className="mt-5 text-xl font-black">
+                  Default
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  Fast setup with the important game options.
+                </p>
+
+              </button>
+
+              <button
+                onClick={() =>
+                  chooseMode(
+                    "custom"
+                  )
+                }
+                className="w-full rounded-3xl border border-white/15 bg-white/[0.03] p-6 text-left transition hover:border-violet-500/30"
+              >
+
+                <div className="flex items-start justify-between gap-3">
+
+                  <div className="text-3xl">
+                    ⚙️
+                  </div>
+
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-[10px] font-black text-zinc-400">
+                    AVAILABLE
+                  </span>
+
+                </div>
+
+                <h2 className="mt-5 text-xl font-black">
+                  Custom
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  Control clue order, self-voting and quick-mode voting limits.
+                </p>
+
+              </button>
+
+              <div className="rounded-3xl border border-white/10 p-6 opacity-40">
+
+                <div className="text-3xl">
+                  🎲
+                </div>
+
+                <h2 className="mt-4 text-xl font-black">
+                  Chaos
+                </h2>
+
+                <p className="mt-2 text-sm text-zinc-500">
+                  Random rules every match.
+                </p>
+
               </div>
 
-              <h2 className="mt-5 text-xl font-black">
-                Default
-              </h2>
-
-              <p className="mt-2 text-sm leading-6 text-zinc-400">
-                Fast setup with only the important game options.
-              </p>
-
-            </button>
-
-            <div className="mt-4 rounded-3xl border border-white/10 p-6 opacity-40">
-              ⚙️ Custom
-            </div>
-
-            <div className="mt-4 rounded-3xl border border-white/10 p-6 opacity-40">
-              🎲 Chaos
             </div>
 
           </section>
@@ -2140,7 +2333,12 @@ export default function Home() {
             </button>
 
             <p className="text-xs font-bold tracking-[0.2em] text-violet-400">
-              DEFAULT MODE
+              {
+                gameMode ===
+                "custom"
+                  ? "CUSTOM MODE"
+                  : "DEFAULT MODE"
+              }
             </p>
 
             <h1 className="mt-3 text-4xl font-black">
@@ -2151,7 +2349,7 @@ export default function Home() {
               Save names once, then tap only the people who are playing today.
             </p>
 
-            {/* SHARED ROSTER DETECTED */}
+            {/* SHARED ROSTER */}
 
             {incomingSharedPlayers.length >
               0 && (
@@ -2205,7 +2403,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* SAVED PLAYER ROSTER */}
+            {/* PLAYER ROSTER */}
 
             <div className="mt-7 rounded-3xl border border-white/10 bg-white/[0.025] p-4">
 
@@ -2282,7 +2480,9 @@ export default function Home() {
                       (name) => {
                         const selected =
                           players.some(
-                            (player) =>
+                            (
+                              player
+                            ) =>
                               player.toLowerCase() ===
                               name.toLowerCase()
                           );
@@ -2430,7 +2630,7 @@ export default function Home() {
 
               </div>
 
-              {/* SHARE / IMPORT */}
+              {/* SHARE IMPORT */}
 
               <div className="mt-4 grid grid-cols-2 gap-3">
 
@@ -2508,10 +2708,6 @@ export default function Home() {
                   }
                 </p>
               )}
-
-              <p className="mt-4 text-xs leading-5 text-zinc-600">
-                Names are stored on this device. Use Share Roster to move them to a friend&apos;s phone without retyping.
-              </p>
 
             </div>
 
@@ -2607,7 +2803,7 @@ export default function Home() {
 
             </div>
 
-            {/* ELIMINATION MODE */}
+            {/* ELIMINATION */}
 
             <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
 
@@ -2677,20 +2873,7 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    Quick mode: you get{" "}
-                    <strong className="text-zinc-300">
-                      {
-                        imposterCount
-                      }{" "}
-                      voting{" "}
-                      {
-                        imposterCount ===
-                        1
-                          ? "round"
-                          : "rounds"
-                      }
-                    </strong>
-                    . Wrong guesses use a round but do not eliminate normal players. Catch every Imposter before the rounds run out.
+                    Quick mode: wrong guesses use a voting round but do not eliminate normal players. Catch every Imposter before the voting rounds run out.
                   </>
                 )}
 
@@ -2698,7 +2881,7 @@ export default function Home() {
 
             </div>
 
-            {/* PRIVATE PHONE VOTING */}
+            {/* PRIVATE VOTING */}
 
             <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
 
@@ -2772,6 +2955,226 @@ export default function Home() {
 
             </div>
 
+            {/* CUSTOM RULES */}
+
+            {gameMode ===
+              "custom" && (
+              <div className="mt-6 rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-300">
+                  Custom Rules
+                </p>
+
+                <h2 className="mt-2 text-xl font-black">
+                  Advanced controls
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-zinc-500">
+                  These settings only affect Custom Mode.
+                </p>
+
+                {/* RANDOM CLUE ORDER */}
+
+                <div className="mt-6 border-t border-white/10 pt-5">
+
+                  <div className="flex items-center justify-between gap-4">
+
+                    <div>
+
+                      <h3 className="font-bold">
+                        Random Clue Order
+                      </h3>
+
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">
+                        Shuffle the speaking order every round.
+                      </p>
+
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        setRandomClueOrder(
+                          (current) =>
+                            !current
+                        )
+                      }
+                      className={`relative h-8 w-14 flex-none rounded-full transition ${
+                        randomClueOrder
+                          ? "bg-violet-600"
+                          : "bg-zinc-700"
+                      }`}
+                    >
+
+                      <span
+                        className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                          randomClueOrder
+                            ? "left-7"
+                            : "left-1"
+                        }`}
+                      />
+
+                    </button>
+
+                  </div>
+
+                </div>
+
+                {/* SELF VOTE */}
+
+                {privatePhoneVoting && (
+                  <div className="mt-5 border-t border-white/10 pt-5">
+
+                    <div className="flex items-center justify-between gap-4">
+
+                      <div>
+
+                        <h3 className="font-bold">
+                          Allow Self Vote
+                        </h3>
+
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          Let a player vote for themselves during private voting.
+                        </p>
+
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          setAllowSelfVote(
+                            (current) =>
+                              !current
+                          )
+                        }
+                        className={`relative h-8 w-14 flex-none rounded-full transition ${
+                          allowSelfVote
+                            ? "bg-violet-600"
+                            : "bg-zinc-700"
+                        }`}
+                      >
+
+                        <span
+                          className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                            allowSelfVote
+                              ? "left-7"
+                              : "left-1"
+                          }`}
+                        />
+
+                      </button>
+
+                    </div>
+
+                  </div>
+                )}
+
+                {/* CUSTOM VOTING ROUNDS */}
+
+                {!eliminationMode && (
+                  <div className="mt-5 border-t border-white/10 pt-5">
+
+                    <div className="flex items-center justify-between gap-4">
+
+                      <div>
+
+                        <h3 className="font-bold">
+                          Custom Voting Rounds
+                        </h3>
+
+                        <p className="mt-1 text-xs leading-5 text-zinc-500">
+                          OFF automatically uses the number of Imposters.
+                        </p>
+
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setCustomVotingLimitEnabled(
+                            (current) =>
+                              !current
+                          );
+
+                          setCustomVotingLimit(
+                            (current) =>
+                              Math.max(
+                                current,
+                                imposterCount
+                              )
+                          );
+                        }}
+                        className={`relative h-8 w-14 flex-none rounded-full transition ${
+                          customVotingLimitEnabled
+                            ? "bg-violet-600"
+                            : "bg-zinc-700"
+                        }`}
+                      >
+
+                        <span
+                          className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                            customVotingLimitEnabled
+                              ? "left-7"
+                              : "left-1"
+                          }`}
+                        />
+
+                      </button>
+
+                    </div>
+
+                    {customVotingLimitEnabled && (
+                      <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <button
+                          onClick={
+                            decreaseCustomVotingLimit
+                          }
+                          disabled={
+                            customVotingLimit <=
+                            imposterCount
+                          }
+                          className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 text-2xl disabled:opacity-20"
+                        >
+                          −
+                        </button>
+
+                        <div className="text-center">
+
+                          <p className="text-3xl font-black">
+                            {
+                              Math.max(
+                                customVotingLimit,
+                                imposterCount
+                              )
+                            }
+                          </p>
+
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Voting rounds
+                          </p>
+
+                        </div>
+
+                        <button
+                          onClick={
+                            increaseCustomVotingLimit
+                          }
+                          disabled={
+                            customVotingLimit >=
+                            maximumCustomVotingRounds
+                          }
+                          className="flex h-12 w-12 items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-2xl text-violet-300 disabled:opacity-20"
+                        >
+                          +
+                        </button>
+
+                      </div>
+                    )}
+
+                  </div>
+                )}
+
+              </div>
+            )}
+
             {startError && (
               <div className="mt-5 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
                 {
@@ -2794,7 +3197,12 @@ export default function Home() {
               {
                 isStarting
                   ? "Preparing Game..."
-                  : "Start Game"
+                  : `Start ${
+                      gameMode ===
+                      "custom"
+                        ? "Custom "
+                        : ""
+                    }Game`
               }
             </button>
 
@@ -3222,7 +3630,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* TIE RESULT */}
+        {/* TIE */}
 
         {screen ===
           "vote-result" &&
@@ -3247,13 +3655,17 @@ export default function Home() {
 
                   {gamePlayers
                     .filter(
-                      (player) =>
+                      (
+                        player
+                      ) =>
                         voteCandidates.includes(
                           player.id
                         )
                     )
                     .map(
-                      (player) => (
+                      (
+                        player
+                      ) => (
                         <div
                           key={
                             player.id
@@ -3283,7 +3695,7 @@ export default function Home() {
             </section>
           )}
 
-        {/* ROUND RESULT */}
+        {/* RESULT */}
 
         {screen === "result" &&
           roundResultPlayer && (
@@ -3460,12 +3872,16 @@ export default function Home() {
 
                       {gamePlayers
                         .filter(
-                          (player) =>
+                          (
+                            player
+                          ) =>
                             player.role ===
                             "imposter"
                         )
                         .map(
-                          (player) => (
+                          (
+                            player
+                          ) => (
                             <p
                               key={
                                 player.id
@@ -3513,6 +3929,7 @@ export default function Home() {
           )}
 
       </div>
+
     </main>
   );
 }
