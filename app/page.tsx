@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { getNextSecretWord } from "@/lib/word-engine";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  getNextSecretWord,
+} from "@/lib/word-engine";
 
 type Screen =
   | "home"
@@ -17,11 +24,19 @@ type Screen =
   | "result"
   | "winner";
 
-type GameMode = "default" | "custom";
+type GameMode =
+  | "default"
+  | "custom"
+  | "chaos";
 
-type Role = "player" | "imposter";
+type Role =
+  | "player"
+  | "imposter";
 
-type Winner = "players" | "imposters" | null;
+type Winner =
+  | "players"
+  | "imposters"
+  | null;
 
 type RoundResultType =
   | "normal-eliminated"
@@ -41,25 +56,42 @@ const SAVED_PLAYERS_KEY =
 const SELECTED_PLAYERS_KEY =
   "imposter-selected-players-v1";
 
-function randomInt(maxExclusive: number) {
+function randomInt(
+  maxExclusive: number
+) {
   if (maxExclusive <= 1) {
     return 0;
   }
 
-  const values = new Uint32Array(1);
+  const values =
+    new Uint32Array(1);
 
-  crypto.getRandomValues(values);
+  crypto.getRandomValues(
+    values
+  );
 
-  return values[0] % maxExclusive;
+  return (
+    values[0] %
+    maxExclusive
+  );
+}
+
+function randomBoolean() {
+  return (
+    randomInt(2) === 1
+  );
 }
 
 function shuffle<T>(
   items: T[]
 ): T[] {
-  const result = [...items];
+  const result = [
+    ...items,
+  ];
 
   for (
-    let i = result.length - 1;
+    let i =
+      result.length - 1;
     i > 0;
     i--
   ) {
@@ -81,14 +113,17 @@ function shuffle<T>(
 function getMaxImposters(
   playerCount: number
 ) {
-  if (playerCount < 3) {
+  if (
+    playerCount < 3
+  ) {
     return 1;
   }
 
   return Math.max(
     1,
     Math.floor(
-      (playerCount - 1) / 2
+      (playerCount - 1) /
+        2
     )
   );
 }
@@ -96,7 +131,7 @@ function getMaxImposters(
 function getRecommendedImposters(
   playerCount: number
 ) {
-  const max =
+  const maximum =
     getMaxImposters(
       playerCount
     );
@@ -111,7 +146,25 @@ function getRecommendedImposters(
 
   return Math.min(
     recommended,
-    max
+    maximum
+  );
+}
+
+function getChaosMaxVotingRounds(
+  playerCount: number,
+  imposterCount: number
+) {
+  return Math.max(
+    imposterCount,
+    Math.min(
+      30,
+      Math.max(
+        imposterCount + 3,
+        Math.ceil(
+          playerCount / 2
+        )
+      )
+    )
   );
 }
 
@@ -120,7 +173,10 @@ function cleanName(
 ) {
   return value
     .trim()
-    .replace(/\s+/g, " ");
+    .replace(
+      /\s+/g,
+      " "
+    );
 }
 
 function uniqueNames(
@@ -129,14 +185,17 @@ function uniqueNames(
   const seen =
     new Set<string>();
 
-  const result: string[] =
-    [];
+  const result:
+    string[] = [];
 
   for (
-    const rawName of names
+    const rawName
+    of names
   ) {
     const name =
-      cleanName(rawName);
+      cleanName(
+        rawName
+      );
 
     if (!name) {
       continue;
@@ -145,13 +204,17 @@ function uniqueNames(
     const key =
       name.toLowerCase();
 
-    if (seen.has(key)) {
+    if (
+      seen.has(key)
+    ) {
       continue;
     }
 
     seen.add(key);
 
-    result.push(name);
+    result.push(
+      name
+    );
   }
 
   return result;
@@ -174,7 +237,9 @@ function parseRosterValue(
       JSON.parse(raw);
 
     if (
-      !Array.isArray(parsed)
+      !Array.isArray(
+        parsed
+      )
     ) {
       return [];
     }
@@ -259,20 +324,24 @@ export default function Home() {
     );
 
   /*
-    SAVED PLAYER SYSTEM
+    SAVED PLAYERS
   */
 
   const [
     savedPlayers,
     setSavedPlayers,
   ] =
-    useState<string[]>([]);
+    useState<string[]>(
+      []
+    );
 
   const [
     players,
     setPlayers,
   ] =
-    useState<string[]>([]);
+    useState<string[]>(
+      []
+    );
 
   const [
     rosterLoaded,
@@ -314,10 +383,12 @@ export default function Home() {
     incomingSharedPlayers,
     setIncomingSharedPlayers,
   ] =
-    useState<string[]>([]);
+    useState<string[]>(
+      []
+    );
 
   /*
-    COMMON SETTINGS
+    GAME SETTINGS
   */
 
   const [
@@ -339,7 +410,7 @@ export default function Home() {
     useState(false);
 
   /*
-    CUSTOM SETTINGS
+    CUSTOM / CHAOS
   */
 
   const [
@@ -367,6 +438,22 @@ export default function Home() {
     useState(1);
 
   /*
+    CHAOS
+  */
+
+  const [
+    chaosRulesGenerated,
+    setChaosRulesGenerated,
+  ] =
+    useState(false);
+
+  const [
+    chaosRollNumber,
+    setChaosRollNumber,
+  ] =
+    useState(0);
+
+  /*
     CURRENT GAME
   */
 
@@ -388,13 +475,17 @@ export default function Home() {
     alivePlayerIds,
     setAlivePlayerIds,
   ] =
-    useState<number[]>([]);
+    useState<
+      number[]
+    >([]);
 
   const [
     spectatorIds,
     setSpectatorIds,
   ] =
-    useState<number[]>([]);
+    useState<
+      number[]
+    >([]);
 
   /*
     ROLE REVEAL
@@ -483,7 +574,9 @@ export default function Home() {
     voteCandidates,
     setVoteCandidates,
   ] =
-    useState<number[]>([]);
+    useState<
+      number[]
+    >([]);
 
   const [
     isRevote,
@@ -492,7 +585,7 @@ export default function Home() {
     useState(false);
 
   /*
-    RESULTS
+    RESULT
   */
 
   const [
@@ -532,7 +625,7 @@ export default function Home() {
     useState("");
 
   /*
-    LOAD SAVED PLAYERS
+    LOAD SAVED ROSTER
   */
 
   useEffect(() => {
@@ -547,13 +640,15 @@ export default function Home() {
           SELECTED_PLAYERS_KEY
         );
 
-      let saved: string[] =
-        [];
+      let saved:
+        string[] = [];
 
-      let selected: string[] =
-        [];
+      let selected:
+        string[] = [];
 
-      if (storedSaved) {
+      if (
+        storedSaved
+      ) {
         const parsed =
           JSON.parse(
             storedSaved
@@ -625,8 +720,7 @@ export default function Home() {
 
       const params =
         new URLSearchParams(
-          window.location
-            .search
+          window.location.search
         );
 
       const sharedRoster =
@@ -651,9 +745,7 @@ export default function Home() {
             setIncomingSharedPlayers(
               uniqueNames(
                 parsed.map(
-                  (
-                    item
-                  ) =>
+                  (item) =>
                     String(
                       item
                     )
@@ -662,7 +754,7 @@ export default function Home() {
             );
           }
         } catch {
-          // Ignore bad roster.
+          // Invalid roster.
         }
       }
     } catch {
@@ -705,7 +797,7 @@ export default function Home() {
   ]);
 
   /*
-    SAVE CURRENT SELECTION
+    SAVE SELECTED PLAYERS
   */
 
   useEffect(() => {
@@ -773,8 +865,13 @@ export default function Home() {
       voteIndex
     ];
 
+  /*
+    CLUE ORDER
+  */
+
   function buildClueOrder(
-    source: GamePlayer[]
+    source:
+      GamePlayer[]
   ) {
     if (
       randomClueOrder
@@ -787,18 +884,216 @@ export default function Home() {
     return [
       ...source,
     ].sort(
-      (a, b) =>
-        a.id - b.id
+      (
+        a,
+        b
+      ) =>
+        a.id -
+        b.id
     );
   }
 
-  function syncImposterCount(
+  /*
+    CHAOS GENERATOR
+  */
+
+  function generateChaosRules(
+    playerCount =
+      players.length
+  ) {
+    if (
+      playerCount < 3
+    ) {
+      setChaosRulesGenerated(
+        false
+      );
+
+      return;
+    }
+
+    const maximumImposters =
+      getMaxImposters(
+        playerCount
+      );
+
+    /*
+      Always at least 1,
+      never more than valid max.
+    */
+
+    const nextImposterCount =
+      randomInt(
+        maximumImposters
+      ) + 1;
+
+    const nextEliminationMode =
+      randomBoolean();
+
+    const nextPrivateVoting =
+      randomBoolean();
+
+    const nextRandomClueOrder =
+      randomBoolean();
+
+    /*
+      Self vote only matters
+      when private voting is ON.
+    */
+
+    const nextAllowSelfVote =
+      nextPrivateVoting
+        ? randomBoolean()
+        : false;
+
+    let nextVotingLimit =
+      nextImposterCount;
+
+    /*
+      When Elimination is OFF,
+      Chaos randomly chooses
+      how many voting rounds
+      the group receives.
+
+      It can NEVER be below
+      the number of Imposters.
+    */
+
+    if (
+      !nextEliminationMode
+    ) {
+      const maximumVotingRounds =
+        getChaosMaxVotingRounds(
+          playerCount,
+          nextImposterCount
+        );
+
+      const range =
+        maximumVotingRounds -
+        nextImposterCount +
+        1;
+
+      nextVotingLimit =
+        nextImposterCount +
+        randomInt(
+          range
+        );
+    }
+
+    setImposterCount(
+      nextImposterCount
+    );
+
+    setEliminationMode(
+      nextEliminationMode
+    );
+
+    setPrivatePhoneVoting(
+      nextPrivateVoting
+    );
+
+    setRandomClueOrder(
+      nextRandomClueOrder
+    );
+
+    setAllowSelfVote(
+      nextAllowSelfVote
+    );
+
+    setCustomVotingLimitEnabled(
+      !nextEliminationMode
+    );
+
+    setCustomVotingLimit(
+      nextVotingLimit
+    );
+
+    setChaosRulesGenerated(
+      true
+    );
+
+    setChaosRollNumber(
+      (current) =>
+        current + 1
+    );
+  }
+
+  /*
+    KEEP SETTINGS VALID
+    WHEN PLAYER COUNT CHANGES
+  */
+
+  function syncSettingsForPlayerCount(
     selectedCount: number
   ) {
+    if (
+      selectedCount < 3
+    ) {
+      setImposterCount(1);
+
+      if (
+        gameMode ===
+        "chaos"
+      ) {
+        setChaosRulesGenerated(
+          false
+        );
+      }
+
+      return;
+    }
+
     const newMaximum =
       getMaxImposters(
         selectedCount
       );
+
+    if (
+      gameMode ===
+      "chaos"
+    ) {
+      if (
+        !chaosRulesGenerated
+      ) {
+        generateChaosRules(
+          selectedCount
+        );
+
+        return;
+      }
+
+      const safeImposterCount =
+        Math.min(
+          imposterCount,
+          newMaximum
+        );
+
+      setImposterCount(
+        safeImposterCount
+      );
+
+      if (
+        !eliminationMode
+      ) {
+        const maximumRounds =
+          getChaosMaxVotingRounds(
+            selectedCount,
+            safeImposterCount
+          );
+
+        setCustomVotingLimit(
+          (current) =>
+            Math.min(
+              Math.max(
+                current,
+                safeImposterCount
+              ),
+              maximumRounds
+            )
+        );
+      }
+
+      return;
+    }
 
     const nextCount =
       Math.min(
@@ -828,13 +1123,11 @@ export default function Home() {
   ) {
     setGameMode(mode);
 
-    /*
-      Advanced settings do
-      not affect Default.
-    */
+    setStartError("");
 
     if (
-      mode === "default"
+      mode ===
+      "default"
     ) {
       setRandomClueOrder(
         true
@@ -847,6 +1140,50 @@ export default function Home() {
       setCustomVotingLimitEnabled(
         false
       );
+
+      setChaosRulesGenerated(
+        false
+      );
+    }
+
+    if (
+      mode ===
+      "custom"
+    ) {
+      setChaosRulesGenerated(
+        false
+      );
+
+      if (
+        imposterCount >
+        getMaxImposters(
+          players.length
+        )
+      ) {
+        setImposterCount(
+          getMaxImposters(
+            players.length
+          )
+        );
+      }
+    }
+
+    if (
+      mode ===
+      "chaos"
+    ) {
+      if (
+        players.length >=
+        3
+      ) {
+        generateChaosRules(
+          players.length
+        );
+      } else {
+        setChaosRulesGenerated(
+          false
+        );
+      }
     }
 
     setScreen("setup");
@@ -857,7 +1194,9 @@ export default function Home() {
       screen ===
       "device"
     ) {
-      setScreen("home");
+      setScreen(
+        "home"
+      );
     } else if (
       screen ===
       "mode"
@@ -876,7 +1215,7 @@ export default function Home() {
   }
 
   /*
-    SAVED PLAYERS
+    SAVED PLAYER FUNCTIONS
   */
 
   function addSavedPlayer() {
@@ -885,7 +1224,9 @@ export default function Home() {
         newPlayerName
       );
 
-    setRosterMessage("");
+    setRosterMessage(
+      ""
+    );
 
     if (!name) {
       return;
@@ -913,11 +1254,10 @@ export default function Home() {
       name,
     ];
 
-    const updatedSelected =
-      [
-        ...players,
-        name,
-      ];
+    const updatedSelected = [
+      ...players,
+      name,
+    ];
 
     setSavedPlayers(
       updatedSaved
@@ -927,7 +1267,7 @@ export default function Home() {
       updatedSelected
     );
 
-    syncImposterCount(
+    syncSettingsForPlayerCount(
       updatedSelected.length
     );
 
@@ -960,9 +1300,11 @@ export default function Home() {
             name,
           ];
 
-    setPlayers(updated);
+    setPlayers(
+      updated
+    );
 
-    syncImposterCount(
+    syncSettingsForPlayerCount(
       updated.length
     );
   }
@@ -992,7 +1334,7 @@ export default function Home() {
       updatedSelected
     );
 
-    syncImposterCount(
+    syncSettingsForPlayerCount(
       updatedSelected.length
     );
 
@@ -1009,14 +1351,25 @@ export default function Home() {
     setCustomVotingLimit(
       1
     );
+
+    if (
+      gameMode ===
+      "chaos"
+    ) {
+      setChaosRulesGenerated(
+        false
+      );
+    }
   }
 
   /*
-    SHARE ROSTER
+    SHARE
   */
 
   async function shareRoster() {
-    setRosterMessage("");
+    setRosterMessage(
+      ""
+    );
 
     if (
       savedPlayers.length ===
@@ -1035,6 +1388,7 @@ export default function Home() {
       );
 
     url.search = "";
+
     url.hash = "";
 
     url.searchParams.set(
@@ -1098,14 +1452,16 @@ export default function Home() {
   }
 
   /*
-    IMPORT ROSTER
+    IMPORT
   */
 
   function mergeImportedRoster(
     names: string[]
   ) {
     const cleanIncoming =
-      uniqueNames(names);
+      uniqueNames(
+        names
+      );
 
     if (
       cleanIncoming.length ===
@@ -1135,15 +1491,21 @@ export default function Home() {
       merged
     );
 
-    setRosterMessage(
+    if (
       added > 0
-        ? `${added} new ${
-            added === 1
-              ? "player"
-              : "players"
-          } imported.`
-        : "All shared players are already saved on this device."
-    );
+    ) {
+      setRosterMessage(
+        `${added} new ${
+          added === 1
+            ? "player"
+            : "players"
+        } imported.`
+      );
+    } else {
+      setRosterMessage(
+        "All shared players are already saved on this device."
+      );
+    }
 
     setIncomingSharedPlayers(
       []
@@ -1207,16 +1569,19 @@ export default function Home() {
   }
 
   function decreaseImposters() {
-    setImposterCount(
+    const next =
       Math.max(
         1,
         imposterCount - 1
-      )
+      );
+
+    setImposterCount(
+      next
     );
   }
 
   /*
-    CUSTOM VOTING LIMIT
+    CUSTOM VOTING
   */
 
   const maximumCustomVotingRounds =
@@ -1257,9 +1622,25 @@ export default function Home() {
       return;
     }
 
-    setIsStarting(true);
+    if (
+      gameMode ===
+        "chaos" &&
+      !chaosRulesGenerated
+    ) {
+      setStartError(
+        "Chaos rules have not been generated yet."
+      );
 
-    setStartError("");
+      return;
+    }
+
+    setIsStarting(
+      true
+    );
+
+    setStartError(
+      ""
+    );
 
     try {
       const cleanedPlayers =
@@ -1288,7 +1669,10 @@ export default function Home() {
 
       const playerIds =
         cleanedPlayers.map(
-          (_, index) =>
+          (
+            _,
+            index
+          ) =>
             index
         );
 
@@ -1323,16 +1707,41 @@ export default function Home() {
           })
         );
 
-      const chosenVotingLimit =
+      let chosenVotingLimit =
+        safeImposterCount;
+
+      /*
+        Custom Mode
+      */
+
+      if (
         gameMode ===
           "custom" &&
         !eliminationMode &&
         customVotingLimitEnabled
-          ? Math.max(
-              safeImposterCount,
-              customVotingLimit
-            )
-          : safeImposterCount;
+      ) {
+        chosenVotingLimit =
+          Math.max(
+            safeImposterCount,
+            customVotingLimit
+          );
+      }
+
+      /*
+        Chaos Mode
+      */
+
+      if (
+        gameMode ===
+          "chaos" &&
+        !eliminationMode
+      ) {
+        chosenVotingLimit =
+          Math.max(
+            safeImposterCount,
+            customVotingLimit
+          );
+      }
 
       setPlayers(
         cleanedPlayers
@@ -1340,14 +1749,6 @@ export default function Home() {
 
       setImposterCount(
         safeImposterCount
-      );
-
-      setCustomVotingLimit(
-        (current) =>
-          Math.max(
-            current,
-            safeImposterCount
-          )
       );
 
       setGamePlayers(
@@ -1361,17 +1762,25 @@ export default function Home() {
         )
       );
 
-      setSpectatorIds([]);
+      setSpectatorIds(
+        []
+      );
 
       setSecretWord(
         selectedWord
       );
 
-      setRevealIndex(0);
+      setRevealIndex(
+        0
+      );
 
-      setRoleVisible(false);
+      setRoleVisible(
+        false
+      );
 
-      setRoundNumber(1);
+      setRoundNumber(
+        1
+      );
 
       setVotingRoundsUsed(
         0
@@ -1381,21 +1790,31 @@ export default function Home() {
         chosenVotingLimit
       );
 
-      setClueOrder([]);
+      setClueOrder(
+        []
+      );
 
-      setVoteOrder([]);
+      setVoteOrder(
+        []
+      );
 
-      setVoteIndex(0);
+      setVoteIndex(
+        0
+      );
 
       setVotes({});
 
-      setVoteCandidates([]);
+      setVoteCandidates(
+        []
+      );
 
       setSelectedVoteId(
         null
       );
 
-      setIsRevote(false);
+      setIsRevote(
+        false
+      );
 
       setRoundResultPlayer(
         null
@@ -1405,17 +1824,25 @@ export default function Home() {
         null
       );
 
-      setWinner(null);
+      setWinner(
+        null
+      );
 
-      setScreen("reveal");
+      setScreen(
+        "reveal"
+      );
     } catch (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
       setStartError(
         "The word bank could not be loaded. Please refresh and try again."
       );
     } finally {
-      setIsStarting(false);
+      setIsStarting(
+        false
+      );
     }
   }
 
@@ -1424,7 +1851,9 @@ export default function Home() {
   */
 
   function finishRoleReveal() {
-    setRoleVisible(false);
+    setRoleVisible(
+      false
+    );
 
     const isLastPlayer =
       revealIndex ===
@@ -1448,11 +1877,13 @@ export default function Home() {
       )
     );
 
-    setScreen("round");
+    setScreen(
+      "round"
+    );
   }
 
   /*
-    VOTING
+    START VOTING
   */
 
   function startVoting() {
@@ -1480,7 +1911,9 @@ export default function Home() {
 
     setVotes({});
 
-    setIsRevote(false);
+    setIsRevote(
+      false
+    );
 
     if (
       privatePhoneVoting
@@ -1491,7 +1924,9 @@ export default function Home() {
         )
       );
 
-      setVoteIndex(0);
+      setVoteIndex(
+        0
+      );
 
       setScreen(
         "vote-pass"
@@ -1508,8 +1943,14 @@ export default function Home() {
       null
     );
 
-    setScreen("vote");
+    setScreen(
+      "vote"
+    );
   }
+
+  /*
+    PRIVATE VOTING
+  */
 
   function submitPrivateVote() {
     if (
@@ -1533,7 +1974,8 @@ export default function Home() {
 
     const isLastVoter =
       voteIndex ===
-      voteOrder.length - 1;
+      voteOrder.length -
+        1;
 
     if (
       !isLastVoter
@@ -1575,7 +2017,9 @@ export default function Home() {
       finalVotes
     ).forEach(
       (candidateId) => {
-        counts[candidateId] =
+        counts[
+          candidateId
+        ] =
           (
             counts[
               candidateId
@@ -1626,7 +2070,9 @@ export default function Home() {
         topCandidates
       );
 
-      setIsRevote(true);
+      setIsRevote(
+        true
+      );
 
       setScreen(
         "vote-result"
@@ -1659,7 +2105,9 @@ export default function Home() {
       )
     );
 
-    setVoteIndex(0);
+    setVoteIndex(
+      0
+    );
 
     setVotes({});
 
@@ -1710,7 +2158,7 @@ export default function Home() {
     }
 
     /*
-      ELIMINATION MODE ON
+      ELIMINATION ON
     */
 
     if (
@@ -1769,6 +2217,23 @@ export default function Home() {
             "player"
         ).length;
 
+      /*
+        YOUR CUSTOM
+        WIN RULE:
+
+        0 Imposters:
+        Players win.
+
+        1 surviving Imposter:
+        Imposter wins at
+        1 Imposter + 1 normal.
+
+        2+ surviving Imposters:
+        Imposters win when
+        only 2 normal players
+        remain.
+      */
+
       if (
         remainingImposters ===
         0
@@ -1782,11 +2247,6 @@ export default function Home() {
         remainingNormalPlayers <=
           1
       ) {
-        /*
-          1 Imposter + 1 normal
-          = Imposter wins.
-        */
-
         setWinner(
           "imposters"
         );
@@ -1796,26 +2256,24 @@ export default function Home() {
         remainingNormalPlayers <=
           2
       ) {
-        /*
-          Multiple Imposters +
-          only 2 normal players
-          = Imposters win.
-        */
-
         setWinner(
           "imposters"
         );
       } else {
-        setWinner(null);
+        setWinner(
+          null
+        );
       }
 
-      setScreen("result");
+      setScreen(
+        "result"
+      );
 
       return;
     }
 
     /*
-      ELIMINATION MODE OFF
+      ELIMINATION OFF
     */
 
     const nextRoundsUsed =
@@ -1882,7 +2340,9 @@ export default function Home() {
           "imposters"
         );
       } else {
-        setWinner(null);
+        setWinner(
+          null
+        );
       }
     } else {
       setRoundResultPlayer(
@@ -1901,11 +2361,15 @@ export default function Home() {
           "imposters"
         );
       } else {
-        setWinner(null);
+        setWinner(
+          null
+        );
       }
     }
 
-    setScreen("result");
+    setScreen(
+      "result"
+    );
   }
 
   /*
@@ -1914,7 +2378,9 @@ export default function Home() {
 
   function continueAfterResult() {
     if (winner) {
-      setScreen("winner");
+      setScreen(
+        "winner"
+      );
 
       return;
     }
@@ -1938,9 +2404,13 @@ export default function Home() {
       )
     );
 
-    setVoteOrder([]);
+    setVoteOrder(
+      []
+    );
 
-    setVoteIndex(0);
+    setVoteIndex(
+      0
+    );
 
     setVotes({});
 
@@ -1948,9 +2418,13 @@ export default function Home() {
       null
     );
 
-    setVoteCandidates([]);
+    setVoteCandidates(
+      []
+    );
 
-    setIsRevote(false);
+    setIsRevote(
+      false
+    );
 
     setRoundResultPlayer(
       null
@@ -1960,7 +2434,9 @@ export default function Home() {
       null
     );
 
-    setScreen("round");
+    setScreen(
+      "round"
+    );
   }
 
   /*
@@ -1968,29 +2444,47 @@ export default function Home() {
   */
 
   function playAgainSamePlayers() {
-    setGamePlayers([]);
+    setGamePlayers(
+      []
+    );
 
     setSecretWord("");
 
-    setAlivePlayerIds([]);
+    setAlivePlayerIds(
+      []
+    );
 
-    setSpectatorIds([]);
+    setSpectatorIds(
+      []
+    );
 
-    setRevealIndex(0);
+    setRevealIndex(
+      0
+    );
 
-    setRoleVisible(false);
+    setRoleVisible(
+      false
+    );
 
-    setRoundNumber(1);
+    setRoundNumber(
+      1
+    );
 
     setVotingRoundsUsed(
       0
     );
 
-    setClueOrder([]);
+    setClueOrder(
+      []
+    );
 
-    setVoteOrder([]);
+    setVoteOrder(
+      []
+    );
 
-    setVoteIndex(0);
+    setVoteIndex(
+      0
+    );
 
     setVotes({});
 
@@ -1998,9 +2492,13 @@ export default function Home() {
       null
     );
 
-    setVoteCandidates([]);
+    setVoteCandidates(
+      []
+    );
 
-    setIsRevote(false);
+    setIsRevote(
+      false
+    );
 
     setRoundResultPlayer(
       null
@@ -2010,30 +2508,57 @@ export default function Home() {
       null
     );
 
-    setWinner(null);
+    setWinner(
+      null
+    );
 
-    setScreen("setup");
+    /*
+      Every new Chaos game
+      gets a new rule roll.
+    */
+
+    if (
+      gameMode ===
+        "chaos" &&
+      players.length >= 3
+    ) {
+      generateChaosRules(
+        players.length
+      );
+    }
+
+    setScreen(
+      "setup"
+    );
   }
 
   function returnHome() {
-    setGamePlayers([]);
+    setGamePlayers(
+      []
+    );
 
     setSecretWord("");
 
-    setAlivePlayerIds([]);
+    setAlivePlayerIds(
+      []
+    );
 
-    setSpectatorIds([]);
+    setSpectatorIds(
+      []
+    );
 
-    setWinner(null);
+    setWinner(
+      null
+    );
 
-    setScreen("home");
+    setScreen(
+      "home"
+    );
   }
 
   /*
-    PRIVATE VOTE CANDIDATES
-
-    Custom Mode can enable
-    self-voting.
+    AVAILABLE PRIVATE
+    VOTE CANDIDATES
   */
 
   const availablePrivateVoteCandidates =
@@ -2082,7 +2607,8 @@ export default function Home() {
 
         {/* HOME */}
 
-        {screen === "home" && (
+        {screen ===
+          "home" && (
           <section className="flex flex-1 flex-col justify-between">
 
             <div className="pt-10">
@@ -2151,11 +2677,14 @@ export default function Home() {
 
         {/* DEVICE */}
 
-        {screen === "device" && (
+        {screen ===
+          "device" && (
           <section>
 
             <button
-              onClick={goBack}
+              onClick={
+                goBack
+              }
               className="mb-10 text-sm font-semibold text-zinc-400"
             >
               ← Back
@@ -2217,11 +2746,14 @@ export default function Home() {
 
         {/* MODE */}
 
-        {screen === "mode" && (
+        {screen ===
+          "mode" && (
           <section>
 
             <button
-              onClick={goBack}
+              onClick={
+                goBack
+              }
               className="mb-10 text-sm font-semibold text-zinc-400"
             >
               ← Back
@@ -2236,6 +2768,8 @@ export default function Home() {
             </h1>
 
             <div className="mt-10 space-y-4">
+
+              {/* DEFAULT */}
 
               <button
                 onClick={() =>
@@ -2268,6 +2802,8 @@ export default function Home() {
 
               </button>
 
+              {/* CUSTOM */}
+
               <button
                 onClick={() =>
                   chooseMode(
@@ -2284,7 +2820,7 @@ export default function Home() {
                   </div>
 
                   <span className="rounded-full border border-white/10 px-3 py-1 text-[10px] font-black text-zinc-400">
-                    AVAILABLE
+                    ADVANCED
                   </span>
 
                 </div>
@@ -2299,21 +2835,38 @@ export default function Home() {
 
               </button>
 
-              <div className="rounded-3xl border border-white/10 p-6 opacity-40">
+              {/* CHAOS */}
 
-                <div className="text-3xl">
-                  🎲
+              <button
+                onClick={() =>
+                  chooseMode(
+                    "chaos"
+                  )
+                }
+                className="w-full rounded-3xl border border-fuchsia-500/30 bg-fuchsia-500/[0.06] p-6 text-left transition hover:border-fuchsia-500/50"
+              >
+
+                <div className="flex items-start justify-between gap-3">
+
+                  <div className="text-3xl">
+                    🎲
+                  </div>
+
+                  <span className="rounded-full bg-fuchsia-500/15 px-3 py-1 text-[10px] font-black text-fuchsia-300">
+                    RANDOM
+                  </span>
+
                 </div>
 
-                <h2 className="mt-4 text-xl font-black">
+                <h2 className="mt-5 text-xl font-black">
                   Chaos
                 </h2>
 
-                <p className="mt-2 text-sm text-zinc-500">
-                  Random rules every match.
+                <p className="mt-2 text-sm leading-6 text-zinc-400">
+                  The game chooses a random valid rule combination every match.
                 </p>
 
-              </div>
+              </button>
 
             </div>
 
@@ -2322,23 +2875,34 @@ export default function Home() {
 
         {/* SETUP */}
 
-        {screen === "setup" && (
+        {screen ===
+          "setup" && (
           <section className="pb-5">
 
             <button
-              onClick={goBack}
+              onClick={
+                goBack
+              }
               className="mb-8 text-sm font-semibold text-zinc-400"
             >
               ← Back
             </button>
 
-            <p className="text-xs font-bold tracking-[0.2em] text-violet-400">
-              {
+            <p
+              className={`text-xs font-bold tracking-[0.2em] ${
                 gameMode ===
-                "custom"
-                  ? "CUSTOM MODE"
-                  : "DEFAULT MODE"
-              }
+                "chaos"
+                  ? "text-fuchsia-400"
+                  : "text-violet-400"
+              }`}
+            >
+              {gameMode ===
+              "custom"
+                ? "CUSTOM MODE"
+                : gameMode ===
+                    "chaos"
+                  ? "CHAOS MODE"
+                  : "DEFAULT MODE"}
             </p>
 
             <h1 className="mt-3 text-4xl font-black">
@@ -2403,7 +2967,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* PLAYER ROSTER */}
+            {/* SAVED PLAYERS */}
 
             <div className="mt-7 rounded-3xl border border-white/10 bg-white/[0.025] p-4">
 
@@ -2578,7 +3142,7 @@ export default function Home() {
                   </div>
                 )}
 
-              {/* ADD PLAYER */}
+              {/* ADD */}
 
               <div className="mt-5 flex gap-2">
 
@@ -2722,238 +3286,451 @@ export default function Home() {
               </div>
             )}
 
-            {/* IMPOSTER COUNT */}
+            {/* CHAOS RULES */}
 
-            <div className="mt-10">
+            {gameMode ===
+              "chaos" && (
+              <div className="mt-8 rounded-[2rem] border border-fuchsia-500/30 bg-fuchsia-500/[0.06] p-5">
 
-              <div className="flex items-end justify-between gap-3">
+                <div className="flex items-start justify-between gap-4">
 
-                <div>
+                  <div>
 
-                  <h2 className="text-lg font-black">
-                    Number of Imposters
-                  </h2>
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-fuchsia-300">
+                      Chaos Rules
+                    </p>
 
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Recommended for this group:{" "}
-                    {
-                      recommendedImposters
-                    }
-                  </p>
-
-                </div>
-
-                <p className="text-xs text-zinc-600">
-                  Max{" "}
-                  {
-                    maxImposters
-                  }
-                </p>
-
-              </div>
-
-              <div className="mt-5 flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-
-                <button
-                  onClick={
-                    decreaseImposters
-                  }
-                  disabled={
-                    imposterCount <=
-                    1
-                  }
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 text-3xl disabled:opacity-20"
-                >
-                  −
-                </button>
-
-                <div className="text-center">
-
-                  <p className="text-4xl font-black">
-                    {
-                      imposterCount
-                    }
-                  </p>
-
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {
-                      imposterCount ===
-                      1
-                        ? "Imposter"
-                        : "Imposters"
-                    }
-                  </p>
-
-                </div>
-
-                <button
-                  onClick={
-                    increaseImposters
-                  }
-                  disabled={
-                    imposterCount >=
-                    maxImposters
-                  }
-                  className="flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/30 bg-violet-500/10 text-3xl text-violet-300 disabled:opacity-20"
-                >
-                  +
-                </button>
-
-              </div>
-
-            </div>
-
-            {/* ELIMINATION */}
-
-            <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-
-              <div className="flex items-center justify-between gap-5">
-
-                <div>
-
-                  <div className="flex items-center gap-2">
-
-                    <h2 className="font-black">
-                      Elimination Mode
+                    <h2 className="mt-2 text-2xl font-black">
+                      Randomized Match
                     </h2>
 
-                    <span
-                      className={`rounded-full px-2 py-1 text-[10px] font-black ${
-                        eliminationMode
-                          ? "bg-violet-500/20 text-violet-200"
-                          : "bg-white/5 text-zinc-500"
-                      }`}
-                    >
-                      {
-                        eliminationMode
-                          ? "ON"
-                          : "OFF"
-                      }
-                    </span>
+                    <p className="mt-2 text-sm leading-6 text-zinc-500">
+                      Every combination is random, but impossible rule combinations are blocked.
+                    </p>
 
                   </div>
 
-                  <p className="mt-1 text-sm leading-5 text-zinc-500">
-                    Remove the voted player and continue the match.
-                  </p>
+                  <div className="text-3xl">
+                    🎲
+                  </div>
 
                 </div>
 
-                <button
-                  onClick={() =>
-                    setEliminationMode(
-                      (current) =>
-                        !current
-                    )
-                  }
-                  className={`relative h-8 w-14 flex-none rounded-full transition ${
-                    eliminationMode
-                      ? "bg-violet-600"
-                      : "bg-zinc-700"
-                  }`}
-                >
+                {players.length <
+                3 ? (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5 text-center">
 
-                  <span
-                    className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
-                      eliminationMode
-                        ? "left-7"
-                        : "left-1"
-                    }`}
-                  />
+                    <p className="font-bold">
+                      Waiting for players
+                    </p>
 
-                </button>
+                    <p className="mt-2 text-sm text-zinc-500">
+                      Select at least 3 players and Chaos will generate the rules.
+                    </p>
 
-              </div>
-
-              <div className="mt-4 rounded-2xl bg-black/20 p-4 text-xs leading-5 text-zinc-500">
-
-                {eliminationMode ? (
+                  </div>
+                ) : chaosRulesGenerated ? (
                   <>
-                    Every voted player is eliminated and becomes a spectator. With 1 surviving Imposter, the game continues until only 1 normal player remains. With 2+ surviving Imposters, it continues while at least 3 normal players remain.
+
+                    <div className="mt-6 flex items-center justify-between">
+
+                      <p className="text-xs text-zinc-500">
+                        Chaos Roll #
+                        {
+                          chaosRollNumber
+                        }
+                      </p>
+
+                      <button
+                        onClick={() =>
+                          generateChaosRules(
+                            players.length
+                          )
+                        }
+                        className="rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-2 text-xs font-black text-fuchsia-200"
+                      >
+                        🎲 Reroll Rules
+                      </button>
+
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <p className="text-xs text-zinc-600">
+                          Imposters
+                        </p>
+
+                        <p className="mt-2 text-xl font-black">
+                          {
+                            imposterCount
+                          }
+                        </p>
+
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <p className="text-xs text-zinc-600">
+                          Elimination
+                        </p>
+
+                        <p
+                          className={`mt-2 font-black ${
+                            eliminationMode
+                              ? "text-violet-300"
+                              : "text-amber-300"
+                          }`}
+                        >
+                          {
+                            eliminationMode
+                              ? "ON"
+                              : "OFF"
+                          }
+                        </p>
+
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <p className="text-xs text-zinc-600">
+                          Voting
+                        </p>
+
+                        <p className="mt-2 font-black">
+                          {
+                            privatePhoneVoting
+                              ? "Private"
+                              : "Group"
+                          }
+                        </p>
+
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <p className="text-xs text-zinc-600">
+                          Clue Order
+                        </p>
+
+                        <p className="mt-2 font-black">
+                          {
+                            randomClueOrder
+                              ? "Random"
+                              : "Saved Order"
+                          }
+                        </p>
+
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <p className="text-xs text-zinc-600">
+                          Self Vote
+                        </p>
+
+                        <p className="mt-2 font-black">
+                          {
+                            !privatePhoneVoting
+                              ? "Not Used"
+                              : allowSelfVote
+                                ? "Allowed"
+                                : "Blocked"
+                          }
+                        </p>
+
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+
+                        <p className="text-xs text-zinc-600">
+                          Vote Limit
+                        </p>
+
+                        <p className="mt-2 font-black">
+                          {
+                            eliminationMode
+                              ? "No Limit"
+                              : `${customVotingLimit} ${
+                                  customVotingLimit ===
+                                  1
+                                    ? "Round"
+                                    : "Rounds"
+                                }`
+                          }
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-fuchsia-500/10 bg-fuchsia-500/[0.05] p-4">
+
+                      <p className="text-xs leading-5 text-fuchsia-200/80">
+                        You can reroll as many times as you want before starting. Once the game starts, these rules stay fixed for that match.
+                      </p>
+
+                    </div>
+
                   </>
                 ) : (
-                  <>
-                    Quick mode: wrong guesses use a voting round but do not eliminate normal players. Catch every Imposter before the voting rounds run out.
-                  </>
+                  <button
+                    onClick={() =>
+                      generateChaosRules(
+                        players.length
+                      )
+                    }
+                    className="mt-6 w-full rounded-2xl bg-fuchsia-600 py-4 font-black"
+                  >
+                    🎲 Generate Chaos Rules
+                  </button>
                 )}
 
               </div>
+            )}
 
-            </div>
+            {/* NORMAL SETTINGS */}
 
-            {/* PRIVATE VOTING */}
+            {gameMode !==
+              "chaos" && (
+              <>
 
-            <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                {/* IMPOSTERS */}
 
-              <div className="flex items-center justify-between gap-5">
+                <div className="mt-10">
 
-                <div>
+                  <div className="flex items-end justify-between gap-3">
 
-                  <div className="flex items-center gap-2">
+                    <div>
 
-                    <h2 className="font-black">
-                      Private Phone Voting
-                    </h2>
+                      <h2 className="text-lg font-black">
+                        Number of Imposters
+                      </h2>
 
-                    <span
-                      className={`rounded-full px-2 py-1 text-[10px] font-black ${
-                        privatePhoneVoting
-                          ? "bg-violet-500/20 text-violet-200"
-                          : "bg-white/5 text-zinc-500"
-                      }`}
-                    >
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Recommended for this group:{" "}
+                        {
+                          recommendedImposters
+                        }
+                      </p>
+
+                    </div>
+
+                    <p className="text-xs text-zinc-600">
+                      Max{" "}
                       {
-                        privatePhoneVoting
-                          ? "ON"
-                          : "OFF"
+                        maxImposters
                       }
-                    </span>
+                    </p>
 
                   </div>
 
-                  <p className="mt-1 text-sm leading-5 text-zinc-500">
-                    Pass the phone privately for every player&apos;s vote.
-                  </p>
+                  <div className="mt-5 flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+
+                    <button
+                      onClick={
+                        decreaseImposters
+                      }
+                      disabled={
+                        imposterCount <=
+                        1
+                      }
+                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 text-3xl disabled:opacity-20"
+                    >
+                      −
+                    </button>
+
+                    <div className="text-center">
+
+                      <p className="text-4xl font-black">
+                        {
+                          imposterCount
+                        }
+                      </p>
+
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {
+                          imposterCount ===
+                          1
+                            ? "Imposter"
+                            : "Imposters"
+                        }
+                      </p>
+
+                    </div>
+
+                    <button
+                      onClick={
+                        increaseImposters
+                      }
+                      disabled={
+                        imposterCount >=
+                        maxImposters
+                      }
+                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/30 bg-violet-500/10 text-3xl text-violet-300 disabled:opacity-20"
+                    >
+                      +
+                    </button>
+
+                  </div>
 
                 </div>
 
-                <button
-                  onClick={() =>
-                    setPrivatePhoneVoting(
-                      (current) =>
-                        !current
-                    )
-                  }
-                  className={`relative h-8 w-14 flex-none rounded-full transition ${
-                    privatePhoneVoting
-                      ? "bg-violet-600"
-                      : "bg-zinc-700"
-                  }`}
-                >
+                {/* ELIMINATION */}
 
-                  <span
-                    className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                <div className="mt-10 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+
+                  <div className="flex items-center justify-between gap-5">
+
+                    <div>
+
+                      <div className="flex items-center gap-2">
+
+                        <h2 className="font-black">
+                          Elimination Mode
+                        </h2>
+
+                        <span
+                          className={`rounded-full px-2 py-1 text-[10px] font-black ${
+                            eliminationMode
+                              ? "bg-violet-500/20 text-violet-200"
+                              : "bg-white/5 text-zinc-500"
+                          }`}
+                        >
+                          {
+                            eliminationMode
+                              ? "ON"
+                              : "OFF"
+                          }
+                        </span>
+
+                      </div>
+
+                      <p className="mt-1 text-sm leading-5 text-zinc-500">
+                        Remove the voted player and continue the match.
+                      </p>
+
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        setEliminationMode(
+                          (current) =>
+                            !current
+                        )
+                      }
+                      className={`relative h-8 w-14 flex-none rounded-full transition ${
+                        eliminationMode
+                          ? "bg-violet-600"
+                          : "bg-zinc-700"
+                      }`}
+                    >
+
+                      <span
+                        className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                          eliminationMode
+                            ? "left-7"
+                            : "left-1"
+                        }`}
+                      />
+
+                    </button>
+
+                  </div>
+
+                  <div className="mt-4 rounded-2xl bg-black/20 p-4 text-xs leading-5 text-zinc-500">
+
+                    {eliminationMode ? (
+                      <>
+                        Every voted player is eliminated and becomes a spectator. With 1 surviving Imposter, the game continues until only 1 normal player remains. With 2+ surviving Imposters, it continues while at least 3 normal players remain.
+                      </>
+                    ) : (
+                      <>
+                        Quick mode: wrong guesses use a voting round but do not eliminate normal players. Catch every Imposter before the voting rounds run out.
+                      </>
+                    )}
+
+                  </div>
+
+                </div>
+
+                {/* PRIVATE VOTING */}
+
+                <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+
+                  <div className="flex items-center justify-between gap-5">
+
+                    <div>
+
+                      <div className="flex items-center gap-2">
+
+                        <h2 className="font-black">
+                          Private Phone Voting
+                        </h2>
+
+                        <span
+                          className={`rounded-full px-2 py-1 text-[10px] font-black ${
+                            privatePhoneVoting
+                              ? "bg-violet-500/20 text-violet-200"
+                              : "bg-white/5 text-zinc-500"
+                          }`}
+                        >
+                          {
+                            privatePhoneVoting
+                              ? "ON"
+                              : "OFF"
+                          }
+                        </span>
+
+                      </div>
+
+                      <p className="mt-1 text-sm leading-5 text-zinc-500">
+                        Pass the phone privately for every player&apos;s vote.
+                      </p>
+
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        setPrivatePhoneVoting(
+                          (current) =>
+                            !current
+                        )
+                      }
+                      className={`relative h-8 w-14 flex-none rounded-full transition ${
+                        privatePhoneVoting
+                          ? "bg-violet-600"
+                          : "bg-zinc-700"
+                      }`}
+                    >
+
+                      <span
+                        className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                          privatePhoneVoting
+                            ? "left-7"
+                            : "left-1"
+                        }`}
+                      />
+
+                    </button>
+
+                  </div>
+
+                  <div className="mt-4 rounded-2xl bg-black/20 p-4 text-xs leading-5 text-zinc-500">
+
+                    {
                       privatePhoneVoting
-                        ? "left-7"
-                        : "left-1"
-                    }`}
-                  />
+                        ? "Everyone votes secretly by passing the phone."
+                        : "Vote normally together, then record the group's final choice once on the phone."
+                    }
 
-                </button>
+                  </div>
 
-              </div>
+                </div>
 
-              <div className="mt-4 rounded-2xl bg-black/20 p-4 text-xs leading-5 text-zinc-500">
-
-                {
-                  privatePhoneVoting
-                    ? "Everyone votes secretly by passing the phone."
-                    : "Vote normally together, then record the group's final choice once on the phone."
-                }
-
-              </div>
-
-            </div>
+              </>
+            )}
 
             {/* CUSTOM RULES */}
 
@@ -2973,7 +3750,7 @@ export default function Home() {
                   These settings only affect Custom Mode.
                 </p>
 
-                {/* RANDOM CLUE ORDER */}
+                {/* CLUE ORDER */}
 
                 <div className="mt-6 border-t border-white/10 pt-5">
 
@@ -3033,7 +3810,7 @@ export default function Home() {
                         </h3>
 
                         <p className="mt-1 text-xs leading-5 text-zinc-500">
-                          Let a player vote for themselves during private voting.
+                          Let players vote for themselves during private voting.
                         </p>
 
                       </div>
@@ -3067,7 +3844,7 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* CUSTOM VOTING ROUNDS */}
+                {/* CUSTOM VOTING LIMIT */}
 
                 {!eliminationMode && (
                   <div className="mt-5 border-t border-white/10 pt-5">
@@ -3190,19 +3967,30 @@ export default function Home() {
               disabled={
                 isStarting ||
                 players.length <
-                  3
+                  3 ||
+                (
+                  gameMode ===
+                    "chaos" &&
+                  !chaosRulesGenerated
+                )
               }
-              className="mt-8 w-full rounded-2xl bg-violet-600 py-5 text-lg font-black disabled:cursor-not-allowed disabled:opacity-40"
+              className={`mt-8 w-full rounded-2xl py-5 text-lg font-black disabled:cursor-not-allowed disabled:opacity-40 ${
+                gameMode ===
+                "chaos"
+                  ? "bg-fuchsia-600"
+                  : "bg-violet-600"
+              }`}
             >
               {
                 isStarting
                   ? "Preparing Game..."
-                  : `Start ${
-                      gameMode ===
+                  : gameMode ===
                       "custom"
-                        ? "Custom "
-                        : ""
-                    }Game`
+                    ? "Start Custom Game"
+                    : gameMode ===
+                        "chaos"
+                      ? "Start Chaos Game"
+                      : "Start Game"
               }
             </button>
 
@@ -3211,7 +3999,8 @@ export default function Home() {
 
         {/* ROLE REVEAL */}
 
-        {screen === "reveal" &&
+        {screen ===
+          "reveal" &&
           currentRevealPlayer && (
             <section className="flex flex-1 flex-col">
 
@@ -3343,7 +4132,8 @@ export default function Home() {
 
         {/* ROUND */}
 
-        {screen === "round" && (
+        {screen ===
+          "round" && (
           <section className="pb-5">
 
             <div className="flex items-center justify-between">
@@ -3499,7 +4289,8 @@ export default function Home() {
 
         {/* PRIVATE VOTE */}
 
-        {screen === "vote" &&
+        {screen ===
+          "vote" &&
           currentVoter && (
             <section>
 
@@ -3655,17 +4446,13 @@ export default function Home() {
 
                   {gamePlayers
                     .filter(
-                      (
-                        player
-                      ) =>
+                      (player) =>
                         voteCandidates.includes(
                           player.id
                         )
                     )
                     .map(
-                      (
-                        player
-                      ) => (
+                      (player) => (
                         <div
                           key={
                             player.id
@@ -3697,7 +4484,8 @@ export default function Home() {
 
         {/* RESULT */}
 
-        {screen === "result" &&
+        {screen ===
+          "result" &&
           roundResultPlayer && (
             <section className="flex flex-1 flex-col">
 
@@ -3822,7 +4610,8 @@ export default function Home() {
 
         {/* WINNER */}
 
-        {screen === "winner" &&
+        {screen ===
+          "winner" &&
           winner && (
             <section className="flex flex-1 flex-col">
 
@@ -3872,16 +4661,12 @@ export default function Home() {
 
                       {gamePlayers
                         .filter(
-                          (
-                            player
-                          ) =>
+                          (player) =>
                             player.role ===
                             "imposter"
                         )
                         .map(
-                          (
-                            player
-                          ) => (
+                          (player) => (
                             <p
                               key={
                                 player.id
@@ -3909,9 +4694,19 @@ export default function Home() {
                   onClick={
                     playAgainSamePlayers
                   }
-                  className="w-full rounded-2xl bg-violet-600 py-5 text-lg font-black"
+                  className={`w-full rounded-2xl py-5 text-lg font-black ${
+                    gameMode ===
+                    "chaos"
+                      ? "bg-fuchsia-600"
+                      : "bg-violet-600"
+                  }`}
                 >
-                  Play Again
+                  {
+                    gameMode ===
+                    "chaos"
+                      ? "Play Again — New Chaos"
+                      : "Play Again"
+                  }
                 </button>
 
                 <button
