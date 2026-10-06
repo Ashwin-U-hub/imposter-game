@@ -4,12 +4,17 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import {
   supabase,
 } from "@/lib/supabase";
+
+import {
+  getNextSecretWord,
+} from "@/lib/word-engine";
 
 type LobbyView =
   | "menu"
@@ -50,6 +55,19 @@ type Room = {
 
   settings_revision: number;
 
+  game_phase:
+    | "lobby"
+    | "preparing"
+    | "role_reveal"
+    | "clue"
+    | "voting"
+    | "result"
+    | "finished";
+
+  game_revision: number;
+
+  started_at: string | null;
+
   created_at: string;
 
   updated_at: string;
@@ -69,6 +87,28 @@ type RoomPlayer = {
   is_spectator: boolean;
 
   joined_at: string;
+};
+
+type PrivateRole = {
+  id: string;
+
+  room_id: string;
+
+  room_player_id: string;
+
+  user_id: string;
+
+  game_revision: number;
+
+  role:
+    | "player"
+    | "imposter";
+
+  secret_word: string | null;
+
+  is_word_provider: boolean;
+
+  created_at: string;
 };
 
 type RoomSettingsPatch =
@@ -266,6 +306,54 @@ function getFriendlyError(
     return "Invalid game mode.";
   }
 
+  if (
+    message.includes(
+      "GAME_ALREADY_STARTED"
+    )
+  ) {
+    return "This game has already started.";
+  }
+
+  if (
+    message.includes(
+      "NOT_ENOUGH_PLAYERS"
+    )
+  ) {
+    return "At least 3 players are required to start.";
+  }
+
+  if (
+    message.includes(
+      "NO_WORD_PROVIDER"
+    )
+  ) {
+    return "The secret word could not be prepared. Try creating a fresh room.";
+  }
+
+  if (
+    message.includes(
+      "NOT_WORD_PROVIDER"
+    )
+  ) {
+    return "This device is not allowed to prepare the secret word.";
+  }
+
+  if (
+    message.includes(
+      "INVALID_WORD"
+    )
+  ) {
+    return "The selected secret word was invalid. Try again.";
+  }
+
+  if (
+    message.includes(
+      "WORD_ALREADY_SET"
+    )
+  ) {
+    return "The secret word has already been prepared.";
+  }
+
   return message;
 }
 
@@ -387,6 +475,31 @@ export default function MultiplayerPage() {
   ] =
     useState(false);
 
+  const [
+    privateRole,
+    setPrivateRole,
+  ] =
+    useState<
+      PrivateRole | null
+    >(null);
+
+  const [
+    roleRevealed,
+    setRoleRevealed,
+  ] =
+    useState(false);
+
+  const [
+    wordSubmitting,
+    setWordSubmitting,
+  ] =
+    useState(false);
+
+  const wordSubmissionRevisionRef =
+    useRef<number | null>(
+      null
+    );
+
   /*
     CLEAR ACTIVE ROOM
   */
@@ -403,6 +516,22 @@ export default function MultiplayerPage() {
         setRoom(null);
 
         setRoomPlayers([]);
+
+        // Room codes are temporary.
+        // Always clear the previous join code when
+        // a room is closed, left, or no longer exists.
+        setJoinCode("");
+
+        setCodeCopied(false);
+
+        setPrivateRole(null);
+
+        setRoleRevealed(false);
+
+        setWordSubmitting(false);
+
+        wordSubmissionRevisionRef.current =
+          null;
 
         setView(
           "menu"
@@ -471,6 +600,59 @@ export default function MultiplayerPage() {
     );
 
   /*
+    LOAD PRIVATE ROLE
+  */
+
+  const loadPrivateRole =
+    useCallback(
+      async (
+        roomId: string,
+        gameRevision: number
+      ) => {
+        if (
+          gameRevision < 1
+        ) {
+          setPrivateRole(null);
+          return;
+        }
+
+        const {
+          data,
+          error:
+            roleError,
+        } =
+          await supabase
+            .from(
+              "room_private_roles"
+            )
+            .select(
+              "id, room_id, room_player_id, user_id, game_revision, role, secret_word, is_word_provider, created_at"
+            )
+            .eq(
+              "room_id",
+              roomId
+            )
+            .eq(
+              "game_revision",
+              gameRevision
+            )
+            .maybeSingle();
+
+        if (
+          roleError
+        ) {
+          return;
+        }
+
+        setPrivateRole(
+          data as
+            PrivateRole | null
+        );
+      },
+      []
+    );
+
+  /*
     REFRESH ROOM
   */
 
@@ -502,6 +684,9 @@ export default function MultiplayerPage() {
               allow_self_vote,
               voting_round_limit,
               settings_revision,
+              game_phase,
+              game_revision,
+              started_at,
               created_at,
               updated_at
               `
@@ -726,6 +911,9 @@ export default function MultiplayerPage() {
                     allow_self_vote,
                     voting_round_limit,
                     settings_revision,
+                    game_phase,
+                    game_revision,
+                    started_at,
                     created_at,
                     updated_at
                     `
@@ -924,6 +1112,167 @@ export default function MultiplayerPage() {
   ]);
 
   /*
+    PRIVATE ROLE SYNC
+  */
+
+  useEffect(() => {
+    if (
+      !room ||
+      room.status !==
+        "playing" ||
+      room.game_revision < 1
+    ) {
+      setPrivateRole(null);
+      setRoleRevealed(false);
+      return;
+    }
+
+    void loadPrivateRole(
+      room.id,
+      room.game_revision
+    );
+  }, [
+    room?.id,
+    room?.status,
+    room?.game_revision,
+    room?.game_phase,
+    loadPrivateRole,
+  ]);
+
+  /*
+    SECRET WORD PROVIDER
+
+    Exactly one NORMAL player's
+    private row has
+    is_word_provider = true.
+
+    That device chooses a word
+    from the existing local word
+    bank and submits it securely.
+  */
+
+  useEffect(() => {
+    if (
+      !room ||
+      room.status !==
+        "playing" ||
+      room.game_phase !==
+        "preparing" ||
+      !privateRole ||
+      privateRole.game_revision !==
+        room.game_revision ||
+      !privateRole.is_word_provider ||
+      privateRole.role !==
+        "player"
+    ) {
+      return;
+    }
+
+    if (
+      wordSubmissionRevisionRef.current ===
+      room.game_revision
+    ) {
+      return;
+    }
+
+    const roomId =
+      room.id;
+
+    const gameRevision =
+      room.game_revision;
+
+    wordSubmissionRevisionRef.current =
+      gameRevision;
+
+    async function prepareSecretWord() {
+      setWordSubmitting(true);
+
+      try {
+        const secretWord =
+          await getNextSecretWord();
+
+        const {
+          error:
+            submitWordError,
+        } =
+          await supabase.rpc(
+            "submit_room_secret_word",
+            {
+              p_room_id:
+                roomId,
+
+              p_word:
+                secretWord,
+            }
+          );
+
+        if (
+          submitWordError
+        ) {
+          if (
+            String(
+              submitWordError.message
+            ).includes(
+              "WORD_ALREADY_SET"
+            )
+          ) {
+            await refreshRoom(
+              roomId
+            );
+
+            await loadPrivateRole(
+              roomId,
+              gameRevision
+            );
+
+            return;
+          }
+
+          throw submitWordError;
+        }
+
+        await refreshRoom(
+          roomId
+        );
+
+        await loadPrivateRole(
+          roomId,
+          gameRevision
+        );
+      } catch (
+        wordError
+      ) {
+        wordSubmissionRevisionRef.current =
+          null;
+
+        const message =
+          getErrorMessage(
+            wordError,
+            "Unable to prepare the secret word."
+          );
+
+        setError(
+          getFriendlyError(
+            message
+          )
+        );
+      } finally {
+        setWordSubmitting(false);
+      }
+    }
+
+    void prepareSecretWord();
+  }, [
+    room?.id,
+    room?.status,
+    room?.game_phase,
+    room?.game_revision,
+    privateRole,
+    refreshRoom,
+    loadPrivateRole,
+  ]);
+
+  /*
     HOST
   */
 
@@ -1019,6 +1368,9 @@ export default function MultiplayerPage() {
           allow_self_vote,
           voting_round_limit,
           settings_revision,
+          game_phase,
+          game_revision,
+          started_at,
           created_at,
           updated_at
           `
@@ -1249,6 +1601,10 @@ export default function MultiplayerPage() {
       await openRoom(
         joined.room_id
       );
+
+      // The code has already served its purpose.
+      // Do not carry it into the next room attempt.
+      setJoinCode("");
     } catch (
       joinRoomError
     ) {
@@ -1810,6 +2166,86 @@ export default function MultiplayerPage() {
   }
 
   /*
+    START GAME
+  */
+
+  async function startGame() {
+    if (
+      !room ||
+      !isHost ||
+      loading ||
+      settingsSaving
+    ) {
+      return;
+    }
+
+    if (
+      activePlayerCount < 3
+    ) {
+      setError(
+        "At least 3 players are required to start."
+      );
+      return;
+    }
+
+    if (
+      !settingsAreValid
+    ) {
+      setError(
+        "Adjust the game settings before starting."
+      );
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setPrivateRole(null);
+    setRoleRevealed(false);
+    wordSubmissionRevisionRef.current =
+      null;
+
+    try {
+      const {
+        error:
+          startError,
+      } =
+        await supabase.rpc(
+          "start_game_room",
+          {
+            p_room_id:
+              room.id,
+          }
+        );
+
+      if (
+        startError
+      ) {
+        throw startError;
+      }
+
+      await refreshRoom(
+        room.id
+      );
+    } catch (
+      startGameError
+    ) {
+      const message =
+        getErrorMessage(
+          startGameError,
+          "Unable to start game."
+        );
+
+      setError(
+        getFriendlyError(
+          message
+        )
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /*
     AUTH LOADING
   */
 
@@ -1858,6 +2294,10 @@ export default function MultiplayerPage() {
                   "/";
               } else {
                 setError("");
+
+                // Keep the remembered player name,
+                // but never keep an old room code.
+                setJoinCode("");
 
                 setView(
                   "menu"
@@ -1928,6 +2368,11 @@ export default function MultiplayerPage() {
               <button
                 onClick={() => {
                   setError("");
+
+                  // Every Join Room attempt starts with
+                  // a fresh room-code field.
+                  // The saved player name is intentionally kept.
+                  setJoinCode("");
 
                   setView(
                     "join"
@@ -2079,6 +2524,10 @@ export default function MultiplayerPage() {
               Get the 6-character code from the room host.
             </p>
 
+            <p className="mt-8 text-xs font-black uppercase tracking-[0.16em] text-zinc-500">
+              Room Code
+            </p>
+
             <input
               value={
                 joinCode
@@ -2100,7 +2549,7 @@ export default function MultiplayerPage() {
                 )
               }
               placeholder="ABC123"
-              className="mt-8 h-20 w-full rounded-3xl border border-white/10 bg-white/[0.04] px-4 text-center text-4xl font-black uppercase tracking-[0.2em] outline-none placeholder:text-zinc-800 focus:border-violet-500"
+              className="mt-3 h-20 w-full rounded-3xl border border-white/10 bg-white/[0.04] px-4 text-center text-4xl font-black uppercase tracking-[0.2em] outline-none placeholder:text-zinc-800 focus:border-violet-500"
             />
 
             {savedNames.length >
@@ -2108,7 +2557,7 @@ export default function MultiplayerPage() {
               <div className="mt-7">
 
                 <p className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-600">
-                  Your name
+                  Saved Names
                 </p>
 
                 <div className="mt-3 flex max-h-32 flex-wrap gap-2 overflow-y-auto">
@@ -2143,6 +2592,10 @@ export default function MultiplayerPage() {
               </div>
             )}
 
+            <p className="mt-6 text-xs font-black uppercase tracking-[0.16em] text-zinc-500">
+              Your Name
+            </p>
+
             <input
               value={
                 playerName
@@ -2168,7 +2621,7 @@ export default function MultiplayerPage() {
                 }
               }}
               placeholder="Your name"
-              className="mt-5 h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 font-bold outline-none placeholder:text-zinc-700 focus:border-violet-500"
+              className="mt-3 h-14 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 font-bold outline-none placeholder:text-zinc-700 focus:border-violet-500"
             />
 
             <button
@@ -2197,7 +2650,9 @@ export default function MultiplayerPage() {
 
         {view ===
           "lobby" &&
-          room && (
+          room &&
+          room.status ===
+            "lobby" && (
           <section className="flex min-h-[calc(100vh-4rem)] flex-col">
 
             {/* HEADER */}
@@ -3099,14 +3554,30 @@ export default function MultiplayerPage() {
                 <>
 
                   <button
-                    disabled
-                    className="w-full rounded-2xl bg-violet-600 py-5 text-lg font-black opacity-40"
+                    onClick={() =>
+                      void startGame()
+                    }
+                    disabled={
+                      loading ||
+                      settingsSaving ||
+                      activePlayerCount <
+                        3 ||
+                      !settingsAreValid
+                    }
+                    className="w-full rounded-2xl bg-violet-600 py-5 text-lg font-black disabled:opacity-30"
                   >
-                    Start Game
+                    {
+                      loading
+                        ? "Starting..."
+                        : activePlayerCount <
+                            3
+                          ? `Need ${3 - activePlayerCount} more player${3 - activePlayerCount === 1 ? "" : "s"}`
+                          : "Start Game"
+                    }
                   </button>
 
                   <p className="mt-3 text-center text-xs leading-5 text-zinc-600">
-                    Settings synchronization is ready. Secure role assignment is the next phase.
+                    Roles are assigned privately. Each phone can read only its own role.
                   </p>
 
                 </>
@@ -3140,6 +3611,236 @@ export default function MultiplayerPage() {
                 }
               </button>
 
+            </div>
+
+          </section>
+        )}
+
+        {/* ACTIVE GAME */}
+
+        {view ===
+          "lobby" &&
+          room &&
+          room.status !==
+            "lobby" && (
+          <section className="flex min-h-[calc(100vh-4rem)] flex-col">
+
+            <div className="flex items-start justify-between gap-4">
+
+              <div>
+                <p className="text-xs font-bold tracking-[0.2em] text-violet-400">
+                  ROOM {room.code}
+                </p>
+
+                <h1 className="mt-3 text-3xl font-black">
+                  {
+                    room.game_phase ===
+                    "preparing"
+                      ? "Preparing game"
+                      : room.game_phase ===
+                          "role_reveal"
+                        ? "Your private role"
+                        : "Game in progress"
+                  }
+                </h1>
+              </div>
+
+              <div
+                className={`rounded-full px-3 py-2 text-[10px] font-black ${
+                  realtimeStatus ===
+                  "Live"
+                    ? "bg-emerald-500/10 text-emerald-300"
+                    : "bg-amber-500/10 text-amber-300"
+                }`}
+              >
+                ● {realtimeStatus}
+              </div>
+
+            </div>
+
+            {room.game_phase ===
+              "preparing" && (
+              <div className="mt-10">
+
+                <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] border border-violet-500/20 bg-violet-500/10 text-5xl">
+                  🔐
+                </div>
+
+                <div className="mt-7 text-center">
+                  <h2 className="text-2xl font-black">
+                    Roles assigned securely
+                  </h2>
+
+                  <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-zinc-500">
+                    Keep this screen private. The secret word is being prepared without exposing it to any Imposter.
+                  </p>
+                </div>
+
+                <div className="mt-8 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/10">
+                      {wordSubmitting ? "🔄" : "✓"}
+                    </div>
+
+                    <div>
+                      <p className="font-black">
+                        {
+                          privateRole
+                            ? "Your private role is ready"
+                            : "Receiving your private role"
+                        }
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">
+                        Do not show your phone to the other players.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-violet-500/15 bg-violet-500/[0.05] p-4 text-center">
+                  <p className="text-xs leading-5 text-violet-200">
+                    Waiting for all private game data to finish syncing…
+                  </p>
+                </div>
+
+              </div>
+            )}
+
+            {room.game_phase ===
+              "role_reveal" && (
+              <div className="mt-9">
+
+                <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-4 text-center">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-300">
+                    Private Screen
+                  </p>
+
+                  <p className="mt-2 text-sm leading-6 text-zinc-400">
+                    Hold your phone so nobody else can see it before revealing your role.
+                  </p>
+                </div>
+
+                {!privateRole ? (
+                  <div className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.03] p-8 text-center">
+                    <div className="text-4xl">🔄</div>
+                    <p className="mt-4 font-black">
+                      Loading your private role…
+                    </p>
+                  </div>
+                ) : !roleRevealed ? (
+                  <button
+                    onClick={() =>
+                      setRoleRevealed(
+                        true
+                      )
+                    }
+                    className="mt-6 w-full rounded-[2rem] border border-violet-500/30 bg-violet-500/10 px-6 py-14 text-center"
+                  >
+                    <div className="text-6xl">🙈</div>
+
+                    <p className="mt-6 text-2xl font-black">
+                      Tap to reveal
+                    </p>
+
+                    <p className="mt-2 text-sm text-zinc-500">
+                      Only you should look at this screen.
+                    </p>
+                  </button>
+                ) : (
+                  <div className="mt-6 rounded-[2rem] border border-violet-500/30 bg-violet-500/[0.07] p-7 text-center">
+                    <div className="text-6xl">
+                      🎭
+                    </div>
+
+                    <p className="mt-6 text-xs font-black uppercase tracking-[0.22em] text-violet-300">
+                      Your Role
+                    </p>
+
+                    <h2 className="mt-3 text-4xl font-black">
+                      {
+                        privateRole.role ===
+                        "imposter"
+                          ? "IMPOSTER"
+                          : "PLAYER"
+                      }
+                    </h2>
+
+                    <div className="mt-7 rounded-3xl border border-white/10 bg-black/20 p-6">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
+                        Secret Word
+                      </p>
+
+                      <p className="mt-3 break-words text-3xl font-black">
+                        {
+                          privateRole.role ===
+                          "player"
+                            ? privateRole.secret_word ??
+                              "Loading…"
+                            : "???"
+                        }
+                      </p>
+
+                      <p className="mt-4 text-xs leading-5 text-zinc-500">
+                        Keep this screen private. Do not let another player see your role.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        setRoleRevealed(
+                          false
+                        )
+                      }
+                      className="mt-6 w-full rounded-2xl border border-white/10 py-4 font-black text-zinc-300"
+                    >
+                      Hide My Role
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-center">
+                  <p className="font-black">
+                    Next: Clue Round
+                  </p>
+
+                  <p className="mt-2 text-sm leading-6 text-zinc-500">
+                    Private role reveal is working. Synchronized clue order is the next multiplayer phase.
+                  </p>
+                </div>
+
+              </div>
+            )}
+
+            {room.game_phase !==
+              "preparing" &&
+              room.game_phase !==
+                "role_reveal" && (
+              <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/[0.03] p-8 text-center">
+                <div className="text-5xl">🎮</div>
+                <h2 className="mt-5 text-2xl font-black">
+                  Game in progress
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-zinc-500">
+                  Current phase: {room.game_phase}
+                </p>
+              </div>
+            )}
+
+            <div className="mt-auto pt-10">
+              <button
+                onClick={() =>
+                  void leaveRoom()
+                }
+                disabled={loading}
+                className="w-full rounded-2xl border border-white/10 py-4 font-bold text-zinc-400 disabled:opacity-30"
+              >
+                {
+                  isHost
+                    ? "Close Room & Leave"
+                    : "Leave Game"
+                }
+              </button>
             </div>
 
           </section>
