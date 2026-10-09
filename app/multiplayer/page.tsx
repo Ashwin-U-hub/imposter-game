@@ -68,6 +68,51 @@ type Room = {
 
   started_at: string | null;
 
+  chat_enabled: boolean;
+
+  clue_timer_enabled: boolean;
+
+  clue_time_seconds: number;
+
+  clue_miss_penalty_enabled: boolean;
+
+  clue_rotations: number;
+
+  clue_round_number: number;
+
+  clue_turn_index: number;
+
+  clue_turn_started_at: string | null;
+
+  clue_session_complete: boolean;
+
+  voting_round_number: number;
+
+  vote_ballot_number: number;
+
+  vote_stage:
+    | "idle"
+    | "open"
+    | "tie_break"
+    | "result";
+
+  votes_submitted_count: number;
+
+  votes_required_count: number;
+
+  vote_result_player_id: string | null;
+
+  vote_result_was_imposter: boolean | null;
+
+  vote_winner:
+    | "players"
+    | "imposters"
+    | null;
+
+  imposters_revealed: boolean;
+
+  clue_cycle_end_round: number;
+
   created_at: string;
 
   updated_at: string;
@@ -111,6 +156,62 @@ type PrivateRole = {
   created_at: string;
 };
 
+type ClueOrderItem = {
+  id: string;
+
+  room_id: string;
+
+  game_revision: number;
+
+  round_number: number;
+
+  turn_position: number;
+
+  room_player_id: string;
+
+  user_id: string;
+
+  turn_status:
+    | "pending"
+    | "submitted"
+    | "spoken"
+    | "missed";
+
+  completed_at: string | null;
+
+  penalty_applied: boolean;
+
+  created_at: string;
+};
+
+type RoomClue = {
+  id: string;
+
+  room_id: string;
+
+  game_revision: number;
+
+  round_number: number;
+
+  room_player_id: string;
+
+  user_id: string;
+
+  clue_text: string;
+
+  submitted_at: string;
+
+  edited_at: string | null;
+};
+
+type VoteCandidate = {
+  room_player_id: string;
+};
+
+type RevealedImposter = {
+  room_player_id: string;
+};
+
 type RoomSettingsPatch =
   Partial<
     Pick<
@@ -122,6 +223,18 @@ type RoomSettingsPatch =
       | "random_clue_order"
       | "allow_self_vote"
       | "voting_round_limit"
+    >
+  >;
+
+type ClueSettingsPatch =
+  Partial<
+    Pick<
+      Room,
+      | "chat_enabled"
+      | "clue_timer_enabled"
+      | "clue_time_seconds"
+      | "clue_miss_penalty_enabled"
+      | "clue_rotations"
     >
   >;
 
@@ -354,6 +467,151 @@ function getFriendlyError(
     return "The secret word has already been prepared.";
   }
 
+  if (
+    message.includes(
+      "INVALID_GAME_PHASE"
+    )
+  ) {
+    return "That action is not available in the current game phase.";
+  }
+
+  if (
+    message.includes(
+      "NOT_YOUR_TURN"
+    )
+  ) {
+    return "It is not your turn to send a clue.";
+  }
+
+  if (
+    message.includes(
+      "CLUE_ALREADY_SUBMITTED"
+    )
+  ) {
+    return "You already submitted your clue for this round.";
+  }
+
+  if (
+    message.includes(
+      "INVALID_CLUE"
+    )
+  ) {
+    return "Enter a clue between 1 and 80 characters.";
+  }
+
+  if (
+    message.includes(
+      "CLUE_ORDER_NOT_READY"
+    )
+  ) {
+    return "The clue order is not ready yet. Try again.";
+  }
+
+
+  if (
+    message.includes(
+      "INVALID_CLUE_TIME"
+    )
+  ) {
+    return "Enter a clue timer between 1 and 3600 seconds.";
+  }
+
+  if (
+    message.includes(
+      "INVALID_CLUE_ROTATIONS"
+    )
+  ) {
+    return "Choose between 1 and 10 clue rotations.";
+  }
+
+  if (
+    message.includes(
+      "INVALID_CLUE"
+    )
+  ) {
+    return "Enter a clue between 1 and 80 characters.";
+  }
+
+  if (
+    message.includes(
+      "NOT_YOUR_TURN"
+    )
+  ) {
+    return "It is not your clue turn yet.";
+  }
+
+  if (
+    message.includes(
+      "CHAT_DISABLED"
+    )
+  ) {
+    return "Typed clues are disabled for this game.";
+  }
+
+  if (
+    message.includes(
+      "CHAT_ENABLED"
+    )
+  ) {
+    return "This game is using typed clues.";
+  }
+
+  if (
+    message.includes(
+      "CLUE_ALREADY_SUBMITTED"
+    )
+  ) {
+    return "Your clue for this turn was already submitted. Use Edit if you want to change it.";
+  }
+
+  if (
+    message.includes(
+      "TOO_MANY_CLUE_ROUNDS"
+    )
+  ) {
+    return "The clue-round limit has been reached.";
+  }
+
+  if (
+    message.includes(
+      "VOTING_NOT_OPEN"
+    )
+  ) {
+    return "Voting is not open right now.";
+  }
+
+  if (
+    message.includes(
+      "NOT_ELIGIBLE_TO_VOTE"
+    )
+  ) {
+    return "Spectators cannot vote.";
+  }
+
+  if (
+    message.includes(
+      "INVALID_VOTE_TARGET"
+    )
+  ) {
+    return "That player cannot be voted for in this ballot.";
+  }
+
+  if (
+    message.includes(
+      "SELF_VOTE_DISABLED"
+    )
+  ) {
+    return "Self-voting is disabled.";
+  }
+
+  if (
+    message.includes(
+      "GAME_ALREADY_FINISHED"
+    )
+  ) {
+    return "This game has already finished.";
+  }
+
   return message;
 }
 
@@ -495,6 +753,113 @@ export default function MultiplayerPage() {
   ] =
     useState(false);
 
+  const [
+    clueOrder,
+    setClueOrder,
+  ] =
+    useState<
+      ClueOrderItem[]
+    >([]);
+
+  const [
+    clues,
+    setClues,
+  ] =
+    useState<
+      RoomClue[]
+    >([]);
+
+  const [
+    clueText,
+    setClueText,
+  ] =
+    useState("");
+
+  const [
+    clueBusy,
+    setClueBusy,
+  ] =
+    useState(false);
+
+  const [
+    editingClueId,
+    setEditingClueId,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
+    editingClueText,
+    setEditingClueText,
+  ] =
+    useState("");
+
+  const [
+    clueSecondsLeft,
+    setClueSecondsLeft,
+  ] =
+    useState<number | null>(
+      null
+    );
+
+  const [
+    clueTimerInput,
+    setClueTimerInput,
+  ] =
+    useState("20");
+
+  const [
+    votingBusy,
+    setVotingBusy,
+  ] =
+    useState(false);
+
+  const [
+    myVoteTargetId,
+    setMyVoteTargetId,
+  ] =
+    useState<string | null>(
+      null
+    );
+
+  const [
+    voteCandidateIds,
+    setVoteCandidateIds,
+  ] =
+    useState<string[]>([]);
+
+  const [
+    revealedImposterIds,
+    setRevealedImposterIds,
+  ] =
+    useState<string[]>([]);
+
+  const [
+    wordPeekOpen,
+    setWordPeekOpen,
+  ] =
+    useState(false);
+
+  useEffect(() => {
+    if (room) {
+      setClueTimerInput(
+        String(
+          room.clue_time_seconds
+        )
+      );
+    }
+  }, [
+    room?.clue_time_seconds,
+  ]);
+
+  const expireAttemptRef =
+    useRef({
+      turnKey: "",
+      lastAttemptAt: 0,
+      inFlight: false,
+    });
+
   const wordSubmissionRevisionRef =
     useRef<number | null>(
       null
@@ -529,6 +894,36 @@ export default function MultiplayerPage() {
         setRoleRevealed(false);
 
         setWordSubmitting(false);
+
+        setClueOrder([]);
+
+        setClues([]);
+
+        setClueText("");
+
+        setClueBusy(false);
+
+        setEditingClueId(null);
+
+        setEditingClueText("");
+
+        setClueSecondsLeft(null);
+
+        setVotingBusy(false);
+
+        setMyVoteTargetId(null);
+
+        setVoteCandidateIds([]);
+
+        setRevealedImposterIds([]);
+
+        setWordPeekOpen(false);
+
+        expireAttemptRef.current = {
+          turnKey: "",
+          lastAttemptAt: 0,
+          inFlight: false,
+        };
 
         wordSubmissionRevisionRef.current =
           null;
@@ -653,6 +1048,255 @@ export default function MultiplayerPage() {
     );
 
   /*
+    LOAD CLUE DATA / HISTORY
+  */
+
+  const loadClueData =
+    useCallback(
+      async (
+        roomId: string,
+        gameRevision: number
+      ) => {
+        if (
+          gameRevision < 1
+        ) {
+          setClueOrder([]);
+          setClues([]);
+          return;
+        }
+
+        const [
+          orderResult,
+          cluesResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "room_clue_order"
+              )
+              .select(
+                "id, room_id, game_revision, round_number, turn_position, room_player_id, user_id, turn_status, completed_at, penalty_applied, created_at"
+              )
+              .eq(
+                "room_id",
+                roomId
+              )
+              .eq(
+                "game_revision",
+                gameRevision
+              )
+              .order(
+                "round_number",
+                { ascending: true }
+              )
+              .order(
+                "turn_position",
+                { ascending: true }
+              ),
+
+            supabase
+              .from(
+                "room_clues"
+              )
+              .select(
+                "id, room_id, game_revision, round_number, room_player_id, user_id, clue_text, submitted_at, edited_at"
+              )
+              .eq(
+                "room_id",
+                roomId
+              )
+              .eq(
+                "game_revision",
+                gameRevision
+              )
+              .order(
+                "round_number",
+                { ascending: true }
+              )
+              .order(
+                "submitted_at",
+                { ascending: true }
+              ),
+          ]);
+
+        if (
+          orderResult.error ||
+          cluesResult.error
+        ) {
+          return;
+        }
+
+        setClueOrder(
+          (orderResult.data ?? []) as
+            ClueOrderItem[]
+        );
+
+        setClues(
+          (cluesResult.data ?? []) as
+            RoomClue[]
+        );
+      },
+      []
+    );
+
+  /*
+    LOAD VOTING / REVEAL DATA
+  */
+
+  const loadVotingData =
+    useCallback(
+      async (
+        roomId: string,
+        gameRevision: number,
+        votingRound: number,
+        ballotNumber: number
+      ) => {
+        if (
+          gameRevision < 1
+        ) {
+          setVoteCandidateIds([]);
+          setRevealedImposterIds([]);
+          setMyVoteTargetId(null);
+          return;
+        }
+
+        const [
+          candidatesResult,
+          revealResult,
+        ] =
+          await Promise.all([
+            supabase
+              .from(
+                "room_vote_candidates"
+              )
+              .select(
+                "room_player_id"
+              )
+              .eq(
+                "room_id",
+                roomId
+              )
+              .eq(
+                "game_revision",
+                gameRevision
+              )
+              .eq(
+                "voting_round_number",
+                votingRound
+              )
+              .eq(
+                "ballot_number",
+                ballotNumber
+              ),
+
+            supabase
+              .from(
+                "room_revealed_imposters"
+              )
+              .select(
+                "room_player_id"
+              )
+              .eq(
+                "room_id",
+                roomId
+              )
+              .eq(
+                "game_revision",
+                gameRevision
+              ),
+          ]);
+
+        if (
+          !candidatesResult.error
+        ) {
+          setVoteCandidateIds(
+            (
+              candidatesResult.data ??
+              []
+            ).map(
+              (
+                item
+              ) =>
+                (
+                  item as VoteCandidate
+                ).room_player_id
+            )
+          );
+        }
+
+        if (
+          !revealResult.error
+        ) {
+          setRevealedImposterIds(
+            (
+              revealResult.data ??
+              []
+            ).map(
+              (
+                item
+              ) =>
+                (
+                  item as RevealedImposter
+                ).room_player_id
+            )
+          );
+        }
+
+        if (
+          votingRound < 1 ||
+          ballotNumber < 1
+        ) {
+          setMyVoteTargetId(null);
+          return;
+        }
+
+        const {
+          data:
+            myVoteData,
+          error:
+            myVoteError,
+        } =
+          await supabase
+            .from(
+              "room_votes"
+            )
+            .select(
+              "target_room_player_id"
+            )
+            .eq(
+              "room_id",
+              roomId
+            )
+            .eq(
+              "game_revision",
+              gameRevision
+            )
+            .eq(
+              "voting_round_number",
+              votingRound
+            )
+            .eq(
+              "ballot_number",
+              ballotNumber
+            )
+            .maybeSingle();
+
+        if (
+          !myVoteError
+        ) {
+          setMyVoteTargetId(
+            myVoteData
+              ? String(
+                  myVoteData.target_room_player_id
+                )
+              : null
+          );
+        }
+      },
+      []
+    );
+
+  /*
     REFRESH ROOM
   */
 
@@ -687,6 +1331,25 @@ export default function MultiplayerPage() {
               game_phase,
               game_revision,
               started_at,
+              chat_enabled,
+              clue_timer_enabled,
+              clue_time_seconds,
+              clue_miss_penalty_enabled,
+              clue_rotations,
+              clue_round_number,
+              clue_turn_index,
+              clue_turn_started_at,
+              clue_session_complete,
+              voting_round_number,
+              vote_ballot_number,
+              vote_stage,
+              votes_submitted_count,
+              votes_required_count,
+              vote_result_player_id,
+              vote_result_was_imposter,
+              vote_winner,
+              imposters_revealed,
+              clue_cycle_end_round,
               created_at,
               updated_at
               `
@@ -914,6 +1577,25 @@ export default function MultiplayerPage() {
                     game_phase,
                     game_revision,
                     started_at,
+                    chat_enabled,
+                    clue_timer_enabled,
+                    clue_time_seconds,
+                    clue_miss_penalty_enabled,
+                    clue_rotations,
+                    clue_round_number,
+                    clue_turn_index,
+                    clue_turn_started_at,
+                    clue_session_complete,
+                    voting_round_number,
+                    vote_ballot_number,
+                    vote_stage,
+                    votes_submitted_count,
+                    votes_required_count,
+                    vote_result_player_id,
+                    vote_result_was_imposter,
+                    vote_winner,
+                    imposters_revealed,
+                    clue_cycle_end_round,
                     created_at,
                     updated_at
                     `
@@ -1273,6 +1955,80 @@ export default function MultiplayerPage() {
   ]);
 
   /*
+    CLUE ROUND / HISTORY SYNC
+  */
+
+  useEffect(() => {
+    if (
+      !room ||
+      room.status !==
+        "playing" ||
+      room.game_revision < 1 ||
+      room.clue_round_number < 1
+    ) {
+      if (
+        !room ||
+        room.status !==
+          "playing" ||
+        room.clue_round_number < 1
+      ) {
+        setClueOrder([]);
+        setClues([]);
+      }
+
+      return;
+    }
+
+    void loadClueData(
+      room.id,
+      room.game_revision
+    );
+  }, [
+    room?.id,
+    room?.status,
+    room?.game_phase,
+    room?.game_revision,
+    room?.clue_round_number,
+    room?.clue_turn_index,
+    room?.clue_session_complete,
+    room?.updated_at,
+    loadClueData,
+  ]);
+
+  /*
+    VOTING / REVEAL SYNC
+  */
+
+  useEffect(() => {
+    if (
+      !room ||
+      room.game_revision < 1
+    ) {
+      setVoteCandidateIds([]);
+      setRevealedImposterIds([]);
+      setMyVoteTargetId(null);
+      return;
+    }
+
+    void loadVotingData(
+      room.id,
+      room.game_revision,
+      room.voting_round_number,
+      room.vote_ballot_number
+    );
+  }, [
+    room?.id,
+    room?.game_revision,
+    room?.game_phase,
+    room?.voting_round_number,
+    room?.vote_ballot_number,
+    room?.vote_stage,
+    room?.imposters_revealed,
+    room?.updated_at,
+    loadVotingData,
+  ]);
+
+  /*
     HOST
   */
 
@@ -1317,6 +2073,231 @@ export default function MultiplayerPage() {
         room.imposter_count <=
           maximumImposters
     );
+
+  const myRoomPlayer =
+    roomPlayers.find(
+      (player) =>
+        player.user_id ===
+        userId
+    ) ??
+    null;
+
+  const currentRoundOrder =
+    room
+      ? clueOrder.filter(
+          (item) =>
+            item.round_number ===
+            room.clue_round_number
+        )
+      : [];
+
+  const currentClueTurn =
+    room
+      ? currentRoundOrder.find(
+          (item) =>
+            item.turn_position ===
+            room.clue_turn_index
+        ) ??
+        null
+      : null;
+
+  const currentCluePlayer =
+    currentClueTurn
+      ? roomPlayers.find(
+          (player) =>
+            player.id ===
+            currentClueTurn.room_player_id
+        ) ??
+        null
+      : null;
+
+  const myCurrentClue =
+    myRoomPlayer &&
+    room
+      ? clues.find(
+          (clue) =>
+            clue.room_player_id ===
+              myRoomPlayer.id &&
+            clue.round_number ===
+              room.clue_round_number
+        ) ??
+        null
+      : null;
+
+  const isMyClueTurn =
+    Boolean(
+      currentClueTurn &&
+        myRoomPlayer &&
+        currentClueTurn.room_player_id ===
+          myRoomPlayer.id &&
+        currentClueTurn.turn_status ===
+          "pending"
+    );
+
+  const clueDeadlineReached =
+    Boolean(
+      room &&
+        room.chat_enabled &&
+        room.clue_timer_enabled &&
+        clueSecondsLeft === 0
+    );
+
+  const eligibleVotePlayers =
+    roomPlayers.filter(
+      (player) =>
+        !player.is_spectator &&
+        (
+          room?.allow_self_vote ||
+          player.user_id !==
+            userId
+        )
+    );
+
+  const tiedVotePlayers =
+    roomPlayers.filter(
+      (player) =>
+        voteCandidateIds.includes(
+          player.id
+        )
+    );
+
+  const voteResultPlayer =
+    room?.vote_result_player_id
+      ? roomPlayers.find(
+          (player) =>
+            player.id ===
+            room.vote_result_player_id
+        ) ??
+        null
+      : null;
+
+  const revealedImposterPlayers =
+    roomPlayers.filter(
+      (player) =>
+        revealedImposterIds.includes(
+          player.id
+        )
+    );
+
+  const completedCurrentRoundTurns =
+    currentRoundOrder.filter(
+      (item) =>
+        item.turn_status !==
+        "pending"
+    ).length;
+
+  /*
+    CLUE TIMER
+  */
+
+  useEffect(() => {
+    if (
+      !room ||
+      room.game_phase !==
+        "clue" ||
+      room.clue_session_complete ||
+      !room.chat_enabled ||
+      !room.clue_timer_enabled ||
+      !room.clue_turn_started_at ||
+      !currentClueTurn ||
+      currentClueTurn.turn_status !==
+        "pending"
+    ) {
+      setClueSecondsLeft(null);
+      return;
+    }
+
+    const turnKey =
+      `${room.game_revision}:${room.clue_round_number}:${room.clue_turn_index}`;
+
+    const deadline =
+      new Date(
+        room.clue_turn_started_at
+      ).getTime() +
+      room.clue_time_seconds *
+        1000;
+
+    function updateTimer() {
+      const remaining =
+        Math.max(
+          0,
+          Math.ceil(
+            (deadline -
+              Date.now()) /
+              1000
+          )
+        );
+
+      setClueSecondsLeft(
+        remaining
+      );
+
+      if (
+        remaining === 0 &&
+        (isHost ||
+          isMyClueTurn)
+      ) {
+        const now =
+          Date.now();
+
+        if (
+          expireAttemptRef.current.turnKey !==
+          turnKey
+        ) {
+          expireAttemptRef.current = {
+            turnKey,
+            lastAttemptAt: 0,
+            inFlight: false,
+          };
+        }
+
+        const canRetry =
+          !expireAttemptRef.current.inFlight &&
+          now -
+            expireAttemptRef.current.lastAttemptAt >=
+            600;
+
+        if (canRetry) {
+          expireAttemptRef.current.inFlight =
+            true;
+
+          expireAttemptRef.current.lastAttemptAt =
+            now;
+
+          void expireClueTurn();
+        }
+      }
+    }
+
+    updateTimer();
+
+    const timer =
+      window.setInterval(
+        updateTimer,
+        250
+      );
+
+    return () => {
+      window.clearInterval(
+        timer
+      );
+    };
+  }, [
+    room?.id,
+    room?.game_phase,
+    room?.game_revision,
+    room?.clue_round_number,
+    room?.clue_turn_index,
+    room?.clue_turn_started_at,
+    room?.clue_time_seconds,
+    room?.clue_timer_enabled,
+    room?.chat_enabled,
+    room?.clue_session_complete,
+    currentClueTurn?.id,
+    currentClueTurn?.turn_status,
+    isHost,
+    isMyClueTurn,
+  ]);
 
   /*
     NAME
@@ -1371,6 +2352,25 @@ export default function MultiplayerPage() {
           game_phase,
           game_revision,
           started_at,
+          chat_enabled,
+          clue_timer_enabled,
+          clue_time_seconds,
+          clue_miss_penalty_enabled,
+          clue_rotations,
+          clue_round_number,
+          clue_turn_index,
+          clue_turn_started_at,
+          clue_session_complete,
+          voting_round_number,
+          vote_ballot_number,
+          vote_stage,
+          votes_submitted_count,
+          votes_required_count,
+          vote_result_player_id,
+          vote_result_was_imposter,
+          vote_winner,
+          imposters_revealed,
+          clue_cycle_end_round,
           created_at,
           updated_at
           `
@@ -1968,6 +2968,133 @@ export default function MultiplayerPage() {
   }
 
   /*
+    CLUE / CHAT SETTINGS
+  */
+
+  async function updateClueSettings(
+    patch: ClueSettingsPatch
+  ) {
+    if (
+      !room ||
+      !isHost ||
+      settingsSaving
+    ) {
+      return;
+    }
+
+    const nextChat =
+      patch.chat_enabled ??
+      room.chat_enabled;
+
+    const nextTimer =
+      nextChat &&
+      (
+        patch.clue_timer_enabled ??
+        room.clue_timer_enabled
+      );
+
+    const nextSeconds =
+      Math.min(
+        3600,
+        Math.max(
+          1,
+          patch.clue_time_seconds ??
+            room.clue_time_seconds
+        )
+      );
+
+    const nextPenalty =
+      nextTimer &&
+      (
+        patch.clue_miss_penalty_enabled ??
+        room.clue_miss_penalty_enabled
+      );
+
+    const nextRotations =
+      Math.min(
+        20,
+        Math.max(
+          1,
+          patch.clue_rotations ??
+            room.clue_rotations
+        )
+      );
+
+    setSettingsSaving(true);
+    setError("");
+
+    try {
+      const { error: clueSettingsError } =
+        await supabase.rpc(
+          "update_clue_room_settings",
+          {
+            p_room_id: room.id,
+            p_chat_enabled: nextChat,
+            p_timer_enabled: nextTimer,
+            p_time_seconds: nextSeconds,
+            p_penalty_enabled: nextPenalty,
+            p_rotations: nextRotations,
+          }
+        );
+
+      if (clueSettingsError) {
+        throw clueSettingsError;
+      }
+
+      await refreshRoom(
+        room.id
+      );
+    } catch (clueSettingsUpdateError) {
+      const message =
+        getErrorMessage(
+          clueSettingsUpdateError,
+          "Unable to save clue settings."
+        );
+
+      setError(
+        getFriendlyError(
+          message
+        )
+      );
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  async function saveClueTimerSeconds() {
+    if (
+      !room ||
+      !isHost ||
+      settingsSaving
+    ) {
+      return;
+    }
+
+    const seconds =
+      Number(
+        clueTimerInput
+      );
+
+    if (
+      !Number.isInteger(
+        seconds
+      ) ||
+      seconds < 1 ||
+      seconds > 3600
+    ) {
+      setError(
+        "Enter the clue time in whole seconds from 1 to 3600."
+      );
+      return;
+    }
+
+    await updateClueSettings({
+      clue_time_seconds:
+        seconds,
+    });
+  }
+
+  /*
     SELECT MODE
   */
 
@@ -2053,14 +3180,13 @@ export default function MultiplayerPage() {
           elimination_mode:
             true,
 
-          private_phone_voting:
-            false,
-
           random_clue_order:
             true,
 
           allow_self_vote:
-            false,
+            room.private_phone_voting
+              ? false
+              : false,
 
           voting_round_limit:
             1,
@@ -2109,14 +3235,11 @@ export default function MultiplayerPage() {
     const nextElimination =
       randomBoolean();
 
-    const nextPrivateVoting =
-      randomBoolean();
-
     const nextRandomOrder =
       randomBoolean();
 
     const nextSelfVote =
-      nextPrivateVoting
+      room.private_phone_voting
         ? randomBoolean()
         : false;
 
@@ -2152,7 +3275,7 @@ export default function MultiplayerPage() {
         nextElimination,
 
       private_phone_voting:
-        nextPrivateVoting,
+        room.private_phone_voting,
 
       random_clue_order:
         nextRandomOrder,
@@ -2201,6 +3324,18 @@ export default function MultiplayerPage() {
     setError("");
     setPrivateRole(null);
     setRoleRevealed(false);
+    setClueOrder([]);
+    setClues([]);
+    setClueText("");
+    setClueBusy(false);
+    setEditingClueId(null);
+    setEditingClueText("");
+    setClueSecondsLeft(null);
+    expireAttemptRef.current = {
+          turnKey: "",
+          lastAttemptAt: 0,
+          inFlight: false,
+        };
     wordSubmissionRevisionRef.current =
       null;
 
@@ -2242,6 +3377,576 @@ export default function MultiplayerPage() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  /*
+    BEGIN CLUE SESSION
+  */
+
+  async function beginClueRound() {
+    if (
+      !room ||
+      !isHost ||
+      loading ||
+      clueBusy
+    ) {
+      return;
+    }
+
+    setClueBusy(true);
+    setError("");
+    setClueText("");
+
+    try {
+      const { error: beginError } =
+        await supabase.rpc(
+          "begin_room_clue_round",
+          { p_room_id: room.id }
+        );
+
+      if (beginError) {
+        throw beginError;
+      }
+
+      await refreshRoom(
+        room.id
+      );
+    } catch (beginClueError) {
+      const message =
+        getErrorMessage(
+          beginClueError,
+          "Unable to start the clue round."
+        );
+
+      setError(
+        getFriendlyError(message)
+      );
+    } finally {
+      setClueBusy(false);
+    }
+  }
+
+  /*
+    CHAT ON: SUBMIT ONE CLUE
+  */
+
+  async function submitClue() {
+    if (
+      !room ||
+      room.game_phase !==
+        "clue" ||
+      !room.chat_enabled ||
+      room.clue_session_complete ||
+      !isMyClueTurn ||
+      myCurrentClue ||
+      clueBusy
+    ) {
+      return;
+    }
+
+    const cleanClue =
+      clueText
+        .trim()
+        .replace(/\s+/g, " ");
+
+    if (
+      cleanClue.length < 1 ||
+      cleanClue.length > 80
+    ) {
+      setError(
+        "Enter a clue between 1 and 80 characters."
+      );
+      return;
+    }
+
+    setClueBusy(true);
+    setError("");
+
+    try {
+      const { error: clueError } =
+        await supabase.rpc(
+          "submit_room_clue",
+          {
+            p_room_id: room.id,
+            p_clue: cleanClue,
+          }
+        );
+
+      if (clueError) {
+        throw clueError;
+      }
+
+      setClueText("");
+
+      await Promise.all([
+        refreshRoom(room.id),
+        loadClueData(
+          room.id,
+          room.game_revision
+        ),
+      ]);
+    } catch (submitClueError) {
+      const message =
+        getErrorMessage(
+          submitClueError,
+          "Unable to submit clue."
+        );
+
+      setError(
+        getFriendlyError(message)
+      );
+    } finally {
+      setClueBusy(false);
+    }
+  }
+
+  /*
+    CHAT ON: EDIT EXISTING CLUE
+  */
+
+  async function saveEditedClue() {
+    if (
+      !room ||
+      !editingClueId ||
+      clueBusy
+    ) {
+      return;
+    }
+
+    const cleanClue =
+      editingClueText
+        .trim()
+        .replace(/\s+/g, " ");
+
+    if (
+      cleanClue.length < 1 ||
+      cleanClue.length > 80
+    ) {
+      setError(
+        "Enter a clue between 1 and 80 characters."
+      );
+      return;
+    }
+
+    setClueBusy(true);
+    setError("");
+
+    try {
+      const { error: editError } =
+        await supabase.rpc(
+          "edit_room_clue",
+          {
+            p_room_id: room.id,
+            p_clue_id: editingClueId,
+            p_clue: cleanClue,
+          }
+        );
+
+      if (editError) {
+        throw editError;
+      }
+
+      setEditingClueId(null);
+      setEditingClueText("");
+
+      await loadClueData(
+        room.id,
+        room.game_revision
+      );
+    } catch (editError) {
+      const message =
+        getErrorMessage(
+          editError,
+          "Unable to edit clue."
+        );
+      setError(
+        getFriendlyError(message)
+      );
+    } finally {
+      setClueBusy(false);
+    }
+  }
+
+  /*
+    TIMER DEADLINE
+  */
+
+  async function expireClueTurn() {
+    if (!room) {
+      expireAttemptRef.current.inFlight =
+        false;
+      return;
+    }
+
+    try {
+      const { error: expireError } =
+        await supabase.rpc(
+          "expire_room_clue_turn",
+          { p_room_id: room.id }
+        );
+
+      if (expireError) {
+        throw expireError;
+      }
+
+      await Promise.all([
+        refreshRoom(room.id),
+        loadClueData(
+          room.id,
+          room.game_revision
+        ),
+      ]);
+    } catch {
+      // The server is the source of truth for the deadline.
+      // If this browser reaches 0 slightly before the server,
+      // the timer effect retries after a short delay.
+    } finally {
+      expireAttemptRef.current.inFlight =
+        false;
+    }
+  }
+
+  /*
+    HOST: ADD ONE MORE CLUE ROUND
+  */
+
+  async function addAnotherClueRound() {
+    if (
+      !room ||
+      !isHost ||
+      clueBusy
+    ) {
+      return;
+    }
+
+    setClueBusy(true);
+    setError("");
+
+    try {
+      const { error: extraError } =
+        await supabase.rpc(
+          "add_extra_room_clue_round",
+          { p_room_id: room.id }
+        );
+
+      if (extraError) {
+        throw extraError;
+      }
+
+      await refreshRoom(room.id);
+    } catch (extraError) {
+      const message =
+        getErrorMessage(
+          extraError,
+          "Unable to add another clue round."
+        );
+      setError(
+        getFriendlyError(message)
+      );
+    } finally {
+      setClueBusy(false);
+    }
+  }
+
+  /*
+    HOST: PROCEED AFTER CLUES
+    Online Voting ON  -> Voting
+    Online Voting OFF -> Finished / Next Game
+  */
+
+  async function proceedAfterClues() {
+    if (
+      !room ||
+      !isHost ||
+      clueBusy
+    ) {
+      return;
+    }
+
+    setClueBusy(true);
+    setError("");
+
+    try {
+      const { error: proceedError } =
+        await supabase.rpc(
+          "proceed_after_room_clues",
+          { p_room_id: room.id }
+        );
+
+      if (proceedError) {
+        throw proceedError;
+      }
+
+      await refreshRoom(room.id);
+    } catch (proceedError) {
+      const message =
+        getErrorMessage(
+          proceedError,
+          "Unable to proceed after the clue round."
+        );
+      setError(
+        getFriendlyError(message)
+      );
+    } finally {
+      setClueBusy(false);
+    }
+  }
+
+  async function startNextGame() {
+    if (
+      !room ||
+      !isHost ||
+      clueBusy
+    ) {
+      return;
+    }
+
+    setClueBusy(true);
+    setError("");
+
+    try {
+      const { error: nextGameError } =
+        await supabase.rpc(
+          "reset_room_for_next_game",
+          { p_room_id: room.id }
+        );
+
+      if (nextGameError) {
+        throw nextGameError;
+      }
+
+      setPrivateRole(null);
+      setRoleRevealed(false);
+      setClueOrder([]);
+      setClues([]);
+      setClueText("");
+      setEditingClueId(null);
+      setEditingClueText("");
+      setClueSecondsLeft(null);
+      setVotingBusy(false);
+      setMyVoteTargetId(null);
+      setVoteCandidateIds([]);
+      setRevealedImposterIds([]);
+      setWordPeekOpen(false);
+
+      await Promise.all([
+        refreshRoom(room.id),
+        loadRoomPlayers(room.id),
+      ]);
+    } catch (nextGameError) {
+      const message =
+        getErrorMessage(
+          nextGameError,
+          "Unable to prepare the next game."
+        );
+      setError(
+        getFriendlyError(message)
+      );
+    } finally {
+      setClueBusy(false);
+    }
+  }
+
+  /*
+    ONLINE VOTING
+  */
+
+  async function submitVote(
+    targetPlayerId: string
+  ) {
+    if (
+      !room ||
+      votingBusy
+    ) {
+      return;
+    }
+
+    setVotingBusy(true);
+    setError("");
+
+    try {
+      const {
+        error:
+          voteError,
+      } =
+        await supabase.rpc(
+          "submit_room_vote",
+          {
+            p_room_id:
+              room.id,
+
+            p_target_room_player_id:
+              targetPlayerId,
+          }
+        );
+
+      if (
+        voteError
+      ) {
+        throw voteError;
+      }
+
+      setMyVoteTargetId(
+        targetPlayerId
+      );
+
+      await Promise.all([
+        refreshRoom(
+          room.id
+        ),
+
+        loadVotingData(
+          room.id,
+          room.game_revision,
+          room.voting_round_number,
+          room.vote_ballot_number
+        ),
+      ]);
+    } catch (
+      voteSubmitError
+    ) {
+      const message =
+        getErrorMessage(
+          voteSubmitError,
+          "Unable to submit vote."
+        );
+
+      setError(
+        getFriendlyError(
+          message
+        )
+      );
+    } finally {
+      setVotingBusy(false);
+    }
+  }
+
+  async function continueAfterVoteResult() {
+    if (
+      !room ||
+      !isHost ||
+      votingBusy
+    ) {
+      return;
+    }
+
+    setVotingBusy(true);
+    setError("");
+
+    try {
+      const {
+        error:
+          continueError,
+      } =
+        await supabase.rpc(
+          "continue_after_vote_result",
+          {
+            p_room_id:
+              room.id,
+          }
+        );
+
+      if (
+        continueError
+      ) {
+        throw continueError;
+      }
+
+      setMyVoteTargetId(null);
+      setVoteCandidateIds([]);
+      setWordPeekOpen(false);
+
+      await Promise.all([
+        refreshRoom(
+          room.id
+        ),
+        loadClueData(
+          room.id,
+          room.game_revision
+        ),
+        loadRoomPlayers(
+          room.id
+        ),
+      ]);
+    } catch (
+      continueVoteError
+    ) {
+      const message =
+        getErrorMessage(
+          continueVoteError,
+          "Unable to continue the game."
+        );
+
+      setError(
+        getFriendlyError(
+          message
+        )
+      );
+    } finally {
+      setVotingBusy(false);
+    }
+  }
+
+  async function revealImposters() {
+    if (
+      !room ||
+      !isHost ||
+      votingBusy
+    ) {
+      return;
+    }
+
+    setVotingBusy(true);
+    setError("");
+
+    try {
+      const {
+        error:
+          revealError,
+      } =
+        await supabase.rpc(
+          "reveal_room_imposters",
+          {
+            p_room_id:
+              room.id,
+          }
+        );
+
+      if (
+        revealError
+      ) {
+        throw revealError;
+      }
+
+      await Promise.all([
+        refreshRoom(
+          room.id
+        ),
+
+        loadVotingData(
+          room.id,
+          room.game_revision,
+          room.voting_round_number,
+          room.vote_ballot_number
+        ),
+      ]);
+    } catch (
+      revealImposterError
+    ) {
+      const message =
+        getErrorMessage(
+          revealImposterError,
+          "Unable to reveal the Imposter."
+        );
+
+      setError(
+        getFriendlyError(
+          message
+        )
+      );
+    } finally {
+      setVotingBusy(false);
     }
   }
 
@@ -3170,73 +4875,6 @@ export default function MultiplayerPage() {
 
                 </div>
 
-                {/* PRIVATE VOTE */}
-
-                <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-
-                  <div className="flex items-center justify-between gap-4">
-
-                    <div>
-
-                      <h3 className="font-black">
-                        Private Voting
-                      </h3>
-
-                      <p className="mt-1 text-xs leading-5 text-zinc-500">
-                        Everyone votes privately from their own phone.
-                      </p>
-
-                    </div>
-
-                    {isHost &&
-                    room.mode !==
-                      "chaos" ? (
-                      <button
-                        onClick={() =>
-                          void updateRoomSettings({
-                            private_phone_voting:
-                              !room.private_phone_voting,
-                          })
-                        }
-                        disabled={
-                          settingsSaving
-                        }
-                        className={`relative h-8 w-14 flex-none rounded-full transition ${
-                          room.private_phone_voting
-                            ? "bg-violet-600"
-                            : "bg-zinc-700"
-                        }`}
-                      >
-
-                        <span
-                          className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
-                            room.private_phone_voting
-                              ? "left-7"
-                              : "left-1"
-                          }`}
-                        />
-
-                      </button>
-                    ) : (
-                      <span
-                        className={`rounded-full px-3 py-2 text-xs font-black ${
-                          room.private_phone_voting
-                            ? "bg-violet-500/10 text-violet-300"
-                            : "bg-white/5 text-zinc-500"
-                        }`}
-                      >
-                        {
-                          room.private_phone_voting
-                            ? "ON"
-                            : "OFF"
-                        }
-                      </span>
-                    )}
-
-                  </div>
-
-                </div>
-
                 {/* CUSTOM OPTIONS */}
 
                 {room.mode ===
@@ -3546,6 +5184,331 @@ export default function MultiplayerPage() {
               </div>
             )}
 
+            {/* CLUE COMMUNICATION */}
+
+            <div className="mt-9 border-t border-white/10 pt-8">
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-400">
+                Clue Communication
+              </p>
+
+              <h2 className="mt-2 text-2xl font-black">
+                Chat / Typed Clues
+              </h2>
+
+              <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-black">
+                      Chat
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      {room.chat_enabled
+                        ? "Online-style play: players type one clue on their own phone."
+                        : "Together/offline-style play: the app shares roles, words, clue order, and rotations."}
+                    </p>
+                  </div>
+
+                  {isHost ? (
+                    <button
+                      onClick={() =>
+                        void updateClueSettings({
+                          chat_enabled:
+                            !room.chat_enabled,
+                        })
+                      }
+                      disabled={settingsSaving}
+                      className={`relative h-8 w-14 flex-none rounded-full transition ${
+                        room.chat_enabled
+                          ? "bg-violet-600"
+                          : "bg-zinc-700"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                          room.chat_enabled
+                            ? "left-7"
+                            : "left-1"
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className="rounded-full bg-white/5 px-3 py-2 text-xs font-black text-zinc-400">
+                      {room.chat_enabled ? "ON" : "OFF"}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-black">
+                      Online Voting
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      {room.private_phone_voting
+                        ? "Voting will happen privately on each player&apos;s phone."
+                        : "Voting stays offline with the group. The app will move to Next Game after clues."}
+                    </p>
+                  </div>
+
+                  {isHost ? (
+                    <button
+                      onClick={() =>
+                        void updateRoomSettings({
+                          private_phone_voting:
+                            !room.private_phone_voting,
+                        })
+                      }
+                      disabled={settingsSaving}
+                      className={`relative h-8 w-14 flex-none rounded-full transition ${
+                        room.private_phone_voting
+                          ? "bg-violet-600"
+                          : "bg-zinc-700"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                          room.private_phone_voting
+                            ? "left-7"
+                            : "left-1"
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <span className="rounded-full bg-white/5 px-3 py-2 text-xs font-black text-zinc-400">
+                      {room.private_phone_voting ? "ON" : "OFF"}
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-3 text-[11px] leading-5 text-zinc-600">
+                  Chat OFF defaults this to OFF. Chat ON defaults this to ON. The host can override it afterward.
+                </p>
+              </div>
+
+              {!room.chat_enabled ? (
+                <div className="mt-4 rounded-2xl border border-emerald-500/10 bg-emerald-500/[0.04] p-4">
+                  <p className="text-sm font-black text-emerald-200">
+                    Spoken mode
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    No typed clues, clue history, timer, missed-turn penalty, or per-player Done button. Everyone simply follows the displayed clue order and speaks aloud.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="font-black">
+                          Clue Timer
+                        </h3>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Optional deadline for each typed clue.
+                        </p>
+                      </div>
+
+                      {isHost ? (
+                        <button
+                          onClick={() =>
+                            void updateClueSettings({
+                              clue_timer_enabled:
+                                !room.clue_timer_enabled,
+                            })
+                          }
+                          disabled={settingsSaving}
+                          className={`relative h-8 w-14 flex-none rounded-full transition ${
+                            room.clue_timer_enabled
+                              ? "bg-violet-600"
+                              : "bg-zinc-700"
+                          }`}
+                        >
+                          <span
+                            className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                              room.clue_timer_enabled
+                                ? "left-7"
+                                : "left-1"
+                            }`}
+                          />
+                        </button>
+                      ) : (
+                        <span className="text-xs font-black text-zinc-400">
+                          {room.clue_timer_enabled ? "ON" : "OFF"}
+                        </span>
+                      )}
+                    </div>
+
+                    {room.clue_timer_enabled && (
+                      <div className="mt-5">
+                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-600">
+                          Seconds per clue
+                        </p>
+
+                        {isHost ? (
+                          <div className="mt-3 flex gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={3600}
+                              step={1}
+                              inputMode="numeric"
+                              value={clueTimerInput}
+                              onChange={(event) =>
+                                setClueTimerInput(
+                                  event.target.value.replace(
+                                    /[^0-9]/g,
+                                    ""
+                                  )
+                                )
+                              }
+                              placeholder="e.g. 14 or 80"
+                              className="h-12 min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-4 font-black outline-none focus:border-violet-500"
+                            />
+
+                            <button
+                              onClick={() =>
+                                void saveClueTimerSeconds()
+                              }
+                              disabled={
+                                settingsSaving ||
+                                !clueTimerInput
+                              }
+                              className="rounded-xl bg-violet-600 px-4 text-xs font-black disabled:opacity-30"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-2xl font-black">
+                            {room.clue_time_seconds}s
+                          </p>
+                        )}
+
+                        <p className="mt-2 text-[11px] leading-5 text-zinc-600">
+                          Enter any whole number from 1 to 3600 seconds.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {room.clue_timer_enabled && (
+                    <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <h3 className="font-black">
+                            Missed Turn Penalty
+                          </h3>
+                          <p className="mt-1 text-xs leading-5 text-zinc-500">
+                            A missed deadline is saved as one extra suspicion vote for the later voting calculation.
+                          </p>
+                        </div>
+
+                        {isHost ? (
+                          <button
+                            onClick={() =>
+                              void updateClueSettings({
+                                clue_miss_penalty_enabled:
+                                  !room.clue_miss_penalty_enabled,
+                              })
+                            }
+                            disabled={settingsSaving}
+                            className={`relative h-8 w-14 flex-none rounded-full transition ${
+                              room.clue_miss_penalty_enabled
+                                ? "bg-violet-600"
+                                : "bg-zinc-700"
+                            }`}
+                          >
+                            <span
+                              className={`absolute top-1 h-6 w-6 rounded-full bg-white transition-all ${
+                                room.clue_miss_penalty_enabled
+                                  ? "left-7"
+                                  : "left-1"
+                              }`}
+                            />
+                          </button>
+                        ) : (
+                          <span className="text-xs font-black text-zinc-400">
+                            {room.clue_miss_penalty_enabled ? "ON" : "OFF"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <div>
+                  <h3 className="font-black">
+                    Clue Rotations
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Every active player gets one turn in each rotation.
+                  </p>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between">
+                  {isHost ? (
+                    <button
+                      onClick={() =>
+                        void updateClueSettings({
+                          clue_rotations:
+                            Math.max(
+                              1,
+                              room.clue_rotations - 1
+                            ),
+                        })
+                      }
+                      disabled={
+                        settingsSaving ||
+                        room.clue_rotations <= 1
+                      }
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-xl disabled:opacity-20"
+                    >
+                      −
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
+                  <div className="text-center">
+                    <p className="text-3xl font-black">
+                      {room.clue_rotations}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {room.clue_rotations === 1
+                        ? "Rotation"
+                        : "Rotations"}
+                    </p>
+                  </div>
+
+                  {isHost ? (
+                    <button
+                      onClick={() =>
+                        void updateClueSettings({
+                          clue_rotations:
+                            Math.min(
+                              20,
+                              room.clue_rotations + 1
+                            ),
+                        })
+                      }
+                      disabled={
+                        settingsSaving ||
+                        room.clue_rotations >= 20
+                      }
+                      className="flex h-11 w-11 items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-xl text-violet-300 disabled:opacity-20"
+                    >
+                      +
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* START AREA */}
 
             <div className="mt-auto pt-10">
@@ -3640,7 +5603,15 @@ export default function MultiplayerPage() {
                       : room.game_phase ===
                           "role_reveal"
                         ? "Your private role"
-                        : "Game in progress"
+                        : room.game_phase ===
+                            "clue"
+                          ? room.chat_enabled
+                            ? `Clue Round ${room.clue_round_number}`
+                            : "Clue Order"
+                          : room.game_phase ===
+                              "voting"
+                            ? "Voting"
+                            : "Game in progress"
                   }
                 </h1>
               </div>
@@ -3799,23 +5770,1051 @@ export default function MultiplayerPage() {
                   </div>
                 )}
 
-                <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-center">
-                  <p className="font-black">
-                    Next: Clue Round
-                  </p>
+                {isHost ? (
+                  <div className="mt-6 rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5 text-center">
+                    <p className="font-black">
+                      Everyone checked their role?
+                    </p>
 
-                  <p className="mt-2 text-sm leading-6 text-zinc-500">
-                    Private role reveal is working. Synchronized clue order is the next multiplayer phase.
-                  </p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-500">
+                      Start the clue round after every player has privately seen and hidden their role.
+                    </p>
+
+                    <button
+                      onClick={() =>
+                        void beginClueRound()
+                      }
+                      disabled={
+                        clueBusy
+                      }
+                      className="mt-5 w-full rounded-2xl bg-violet-600 py-4 font-black disabled:opacity-30"
+                    >
+                      {
+                        clueBusy
+                          ? "Starting..."
+                          : "Start Clue Round"
+                      }
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-center">
+                    <p className="font-black">
+                      Waiting for the host
+                    </p>
+
+                    <p className="mt-2 text-sm leading-6 text-zinc-500">
+                      Hide your role after checking it. The host will start the clue round.
+                    </p>
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {room.game_phase ===
+              "clue" && (
+              <div className="mt-8">
+
+                <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+                  {!wordPeekOpen ? (
+                    <button
+                      onClick={() =>
+                        setWordPeekOpen(
+                          true
+                        )
+                      }
+                      className="w-full rounded-2xl border border-violet-500/20 bg-violet-500/[0.06] py-3 text-sm font-black text-violet-200"
+                    >
+                      👁 View My Word
+                    </button>
+                  ) : (
+                    <div className="text-center">
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-300">
+                        Private
+                      </p>
+
+                      <div className="mt-4 text-4xl">
+                        🎭
+                      </div>
+
+                      <p className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">
+                        Secret Word
+                      </p>
+
+                      <p className="mt-2 break-words text-3xl font-black">
+                        {
+                          privateRole?.role ===
+                          "player"
+                            ? privateRole.secret_word ??
+                              "Loading…"
+                            : "???"
+                        }
+                      </p>
+
+                      <button
+                        onClick={() =>
+                          setWordPeekOpen(
+                            false
+                          )
+                        }
+                        className="mt-5 w-full rounded-2xl border border-white/10 py-3 font-black text-zinc-300"
+                      >
+                        Hide
+                      </button>
+                    </div>
+                  )}
                 </div>
 
+                {!room.chat_enabled ? (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-400">
+                          Together / Offline Clues
+                        </p>
+
+                        <h2 className="mt-2 text-2xl font-black">
+                          Follow the clue order
+                        </h2>
+
+                        <p className="mt-2 text-sm leading-6 text-zinc-500">
+                          Say clues aloud in this order. There is no Done button, timer, typed chat, clue history, or missed-turn penalty.
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-white/5 px-3 py-2 text-xs font-black text-zinc-400">
+                        CHAT OFF
+                      </span>
+                    </div>
+
+                    <div className="mt-6 space-y-4">
+                      {Array.from(
+                        {
+                          length:
+                            room.clue_rotations,
+                        },
+                        (_, index) =>
+                          index + 1
+                      ).map(
+                        (roundNumber) => {
+                          const order =
+                            clueOrder
+                              .filter(
+                                (item) =>
+                                  item.round_number ===
+                                  roundNumber
+                              )
+                              .sort(
+                                (a, b) =>
+                                  a.turn_position -
+                                  b.turn_position
+                              );
+
+                          return (
+                            <div
+                              key={roundNumber}
+                              className="rounded-3xl border border-white/10 bg-white/[0.03] p-5"
+                            >
+                              <div className="flex items-center justify-between">
+                                <h3 className="font-black">
+                                  Rotation {roundNumber}
+                                </h3>
+
+                                <span className="text-xs font-bold text-zinc-600">
+                                  {order.length} players
+                                </span>
+                              </div>
+
+                              <div className="mt-4 space-y-2">
+                                {order.length > 0 ? (
+                                  order.map(
+                                    (item) => {
+                                      const player =
+                                        roomPlayers.find(
+                                          (candidate) =>
+                                            candidate.id ===
+                                            item.room_player_id
+                                        );
+
+                                      return (
+                                        <div
+                                          key={item.id}
+                                          className="flex items-center gap-3 rounded-2xl bg-black/20 px-4 py-3"
+                                        >
+                                          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-violet-500/10 text-xs font-black text-violet-300">
+                                            {item.turn_position}
+                                          </div>
+
+                                          <p className="min-w-0 truncate font-black">
+                                            {player?.name ??
+                                              "Player"}
+                                          </p>
+                                        </div>
+                                      );
+                                    }
+                                  )
+                                ) : (
+                                  <p className="text-sm text-zinc-600">
+                                    Loading order…
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }
+                      )}
+                    </div>
+
+                    {isHost ? (
+                      <div className="mt-7 grid gap-3">
+                        <button
+                          onClick={() =>
+                            void proceedAfterClues()
+                          }
+                          disabled={clueBusy}
+                          className="w-full rounded-2xl bg-violet-600 py-4 font-black disabled:opacity-30"
+                        >
+                          {clueBusy
+                            ? "Proceeding..."
+                            : room.private_phone_voting
+                              ? "Proceed to Online Voting"
+                              : "Clues Finished — Next Game"}
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            void addAnotherClueRound()
+                          }
+                          disabled={
+                            clueBusy ||
+                            room.clue_rotations >=
+                              20
+                          }
+                          className="w-full rounded-2xl border border-white/10 py-4 font-black text-zinc-300 disabled:opacity-30"
+                        >
+                          + Add Another Rotation
+                        </button>
+
+                        <p className="text-center text-xs leading-5 text-zinc-600">
+                          {room.private_phone_voting
+                            ? "Online Voting is ON, so Proceed opens voting on every phone."
+                            : "Online Voting is OFF, so your group can vote/discuss offline and then start the next game."}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-7 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-center">
+                        <p className="font-black">
+                          Follow the displayed order
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-zinc-600">
+                          The host will proceed after the group finishes the clue rotations.
+                        </p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-400">
+                          Rotation {room.clue_round_number} / {room.clue_rotations}
+                        </p>
+
+                        <h2 className="mt-2 text-2xl font-black">
+                          {room.clue_session_complete
+                            ? "Clue rounds complete"
+                            : "Typed clue round"}
+                        </h2>
+
+                        <p className="mt-2 text-sm leading-6 text-zinc-500">
+                          One clue slot per player per turn. A submitted clue can be edited, but another message cannot be added for that turn.
+                        </p>
+                      </div>
+
+                      <span className="rounded-full bg-violet-500/10 px-3 py-2 text-xs font-black text-violet-300">
+                        CHAT ON
+                      </span>
+                    </div>
+
+                    {!room.clue_session_complete && (
+                      <>
+                        <div className="mt-6 rounded-[2rem] border border-violet-500/25 bg-violet-500/[0.06] p-6 text-center">
+                          <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-300">
+                            Current Player
+                          </p>
+
+                          <p className="mt-3 text-3xl font-black">
+                            {currentCluePlayer?.name ??
+                              "Loading..."}
+                          </p>
+
+                          {room.clue_timer_enabled &&
+                            clueSecondsLeft !==
+                              null && (
+                            <div
+                              className={`mx-auto mt-5 w-fit rounded-full px-4 py-2 text-sm font-black ${
+                                clueSecondsLeft <=
+                                5
+                                  ? "bg-amber-500/10 text-amber-300"
+                                  : "bg-white/5 text-zinc-300"
+                              }`}
+                            >
+                              ⏱ {clueSecondsLeft}s
+                            </div>
+                          )}
+                        </div>
+
+                        {isMyClueTurn &&
+                        !myCurrentClue &&
+                        !clueDeadlineReached ? (
+                          <div className="mt-5 rounded-3xl border border-emerald-500/20 bg-emerald-500/[0.05] p-5">
+                            <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">
+                              Your Turn
+                            </p>
+
+                            <input
+                              value={clueText}
+                              maxLength={80}
+                              onChange={(event) =>
+                                setClueText(
+                                  event.target.value
+                                )
+                              }
+                              onKeyDown={(event) => {
+                                if (
+                                  event.key ===
+                                  "Enter"
+                                ) {
+                                  void submitClue();
+                                }
+                              }}
+                              placeholder="Type one clue..."
+                              className="mt-4 h-14 w-full rounded-2xl border border-white/10 bg-black/20 px-4 font-bold outline-none placeholder:text-zinc-700 focus:border-emerald-500"
+                            />
+
+                            <div className="mt-2 text-right text-[10px] font-bold text-zinc-600">
+                              {clueText.length}/80
+                            </div>
+
+                            <button
+                              onClick={() =>
+                                void submitClue()
+                              }
+                              disabled={
+                                clueBusy ||
+                                !clueText.trim()
+                              }
+                              className="mt-3 w-full rounded-2xl bg-emerald-600 py-4 font-black disabled:opacity-30"
+                            >
+                              {clueBusy
+                                ? "Sending..."
+                                : "Send Clue"}
+                            </button>
+
+                            <p className="mt-3 text-center text-xs leading-5 text-zinc-600">
+                              One clue only for this turn. You can edit the same clue later.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-center">
+                            <p className="text-sm font-bold text-zinc-300">
+                              {myCurrentClue
+                                ? "✓ Your clue is submitted. You may edit it from Clue History."
+                                : clueDeadlineReached &&
+                                    isMyClueTurn
+                                  ? "⏱ Time expired — marking this turn as missed..."
+                                  : `Waiting for ${currentCluePlayer?.name ?? "the current player"}`}
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="mt-7 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                          <h3 className="font-black">
+                            Current Rotation Order
+                          </h3>
+
+                          <div className="mt-4 space-y-2">
+                            {currentRoundOrder
+                              .slice()
+                              .sort(
+                                (a, b) =>
+                                  a.turn_position -
+                                  b.turn_position
+                              )
+                              .map((item) => {
+                                const player =
+                                  roomPlayers.find(
+                                    (candidate) =>
+                                      candidate.id ===
+                                      item.room_player_id
+                                  );
+
+                                const active =
+                                  item.turn_position ===
+                                  room.clue_turn_index &&
+                                  item.turn_status ===
+                                    "pending";
+
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${
+                                      active
+                                        ? "border border-violet-500/30 bg-violet-500/10"
+                                        : "bg-black/20"
+                                    }`}
+                                  >
+                                    <div className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-white/5 text-xs font-black">
+                                      {item.turn_position}
+                                    </div>
+
+                                    <p className="min-w-0 flex-1 truncate font-black">
+                                      {player?.name ??
+                                        "Player"}
+                                    </p>
+
+                                    <span className="text-[10px] font-black uppercase text-zinc-600">
+                                      {item.turn_status ===
+                                      "submitted"
+                                        ? "Sent"
+                                        : item.turn_status ===
+                                            "missed"
+                                          ? "Missed"
+                                          : active
+                                            ? "Now"
+                                            : "Waiting"}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="mt-7 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                      <h3 className="font-black">
+                        Clue History
+                      </h3>
+
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">
+                        History is grouped by player. Editing updates the same clue instead of creating another message.
+                      </p>
+
+                      <div className="mt-5 space-y-4">
+                        {roomPlayers
+                          .filter(
+                            (player) =>
+                              !player.is_spectator
+                          )
+                          .map((player) => {
+                            const playerClues =
+                              clues
+                                .filter(
+                                  (clue) =>
+                                    clue.room_player_id ===
+                                    player.id
+                                )
+                                .sort(
+                                  (a, b) =>
+                                    a.round_number -
+                                    b.round_number
+                                );
+
+                            const playerMisses =
+                              clueOrder
+                                .filter(
+                                  (item) =>
+                                    item.room_player_id ===
+                                      player.id &&
+                                    item.turn_status ===
+                                      "missed"
+                                )
+                                .sort(
+                                  (a, b) =>
+                                    a.round_number -
+                                    b.round_number
+                                );
+
+                            const rounds =
+                              Array.from(
+                                new Set([
+                                  ...playerClues.map(
+                                    (clue) =>
+                                      clue.round_number
+                                  ),
+                                  ...playerMisses.map(
+                                    (item) =>
+                                      item.round_number
+                                  ),
+                                ])
+                              ).sort(
+                                (a, b) =>
+                                  a - b
+                              );
+
+                            return (
+                              <div
+                                key={player.id}
+                                className="rounded-2xl bg-black/20 p-4"
+                              >
+                                <p className="font-black">
+                                  {player.name}
+                                </p>
+
+                                {rounds.length ===
+                                0 ? (
+                                  <p className="mt-2 text-xs text-zinc-600">
+                                    No clue yet.
+                                  </p>
+                                ) : (
+                                  <div className="mt-3 space-y-2">
+                                    {rounds.map(
+                                      (roundNumber) => {
+                                        const clue =
+                                          playerClues.find(
+                                            (item) =>
+                                              item.round_number ===
+                                              roundNumber
+                                          );
+
+                                        const missed =
+                                          playerMisses.find(
+                                            (item) =>
+                                              item.round_number ===
+                                              roundNumber
+                                          );
+
+                                        return (
+                                          <div
+                                            key={roundNumber}
+                                            className="rounded-xl border border-white/5 p-3"
+                                          >
+                                            <div className="flex items-start justify-between gap-3">
+                                              <div className="min-w-0 flex-1">
+                                                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-600">
+                                                  Round {roundNumber}
+                                                </p>
+
+                                                <p className="mt-1 break-words text-sm font-bold text-zinc-300">
+                                                  {clue
+                                                    ? clue.clue_text
+                                                    : "Missed deadline"}
+                                                </p>
+
+                                                {clue?.edited_at && (
+                                                  <p className="mt-1 text-[10px] text-zinc-600">
+                                                    Edited
+                                                  </p>
+                                                )}
+
+                                                {missed?.penalty_applied && (
+                                                  <p className="mt-2 text-xs font-bold text-amber-300">
+                                                    +1 suspicion vote saved for voting
+                                                  </p>
+                                                )}
+                                              </div>
+
+                                              {clue &&
+                                                clue.user_id ===
+                                                  userId &&
+                                                room.game_phase ===
+                                                  "clue" &&
+                                                editingClueId !==
+                                                  clue.id && (
+                                                <button
+                                                  onClick={() => {
+                                                    setEditingClueId(
+                                                      clue.id
+                                                    );
+                                                    setEditingClueText(
+                                                      clue.clue_text
+                                                    );
+                                                  }}
+                                                  className="rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-zinc-400"
+                                                >
+                                                  Edit
+                                                </button>
+                                              )}
+                                            </div>
+
+                                            {clue &&
+                                              editingClueId ===
+                                                clue.id && (
+                                              <div className="mt-4">
+                                                <input
+                                                  value={
+                                                    editingClueText
+                                                  }
+                                                  maxLength={80}
+                                                  onChange={(event) =>
+                                                    setEditingClueText(
+                                                      event.target.value
+                                                    )
+                                                  }
+                                                  className="h-12 w-full rounded-xl border border-white/10 bg-black/30 px-3 font-bold outline-none focus:border-violet-500"
+                                                />
+
+                                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                                  <button
+                                                    onClick={() => {
+                                                      setEditingClueId(
+                                                        null
+                                                      );
+                                                      setEditingClueText(
+                                                        ""
+                                                      );
+                                                    }}
+                                                    disabled={
+                                                      clueBusy
+                                                    }
+                                                    className="rounded-xl border border-white/10 py-3 text-xs font-black text-zinc-400 disabled:opacity-30"
+                                                  >
+                                                    Cancel
+                                                  </button>
+
+                                                  <button
+                                                    onClick={() =>
+                                                      void saveEditedClue()
+                                                    }
+                                                    disabled={
+                                                      clueBusy ||
+                                                      !editingClueText.trim()
+                                                    }
+                                                    className="rounded-xl bg-violet-600 py-3 text-xs font-black disabled:opacity-30"
+                                                  >
+                                                    Save Edit
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      }
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+
+                    {room.clue_session_complete && (
+                      <div className="mt-8 rounded-[2rem] border border-emerald-500/20 bg-emerald-500/[0.05] p-7 text-center">
+                        <div className="text-5xl">✅</div>
+
+                        <h2 className="mt-5 text-2xl font-black">
+                          Clue rounds complete
+                        </h2>
+
+                        <p className="mt-3 text-sm leading-6 text-zinc-500">
+                          All {room.clue_rotations} configured rotation{room.clue_rotations === 1 ? "" : "s"} are complete.
+                        </p>
+
+                        {isHost ? (
+                          <div className="mt-6 grid gap-3">
+                            <button
+                              onClick={() =>
+                                void proceedAfterClues()
+                              }
+                              disabled={clueBusy}
+                              className="w-full rounded-2xl bg-violet-600 py-4 font-black disabled:opacity-30"
+                            >
+                              {room.private_phone_voting
+                                ? "Go to Online Voting"
+                                : "Finish — Next Game"}
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                void addAnotherClueRound()
+                              }
+                              disabled={
+                                clueBusy ||
+                                room.clue_rotations >=
+                                  20
+                              }
+                              className="w-full rounded-2xl border border-white/10 py-4 font-black text-zinc-300 disabled:opacity-30"
+                            >
+                              + Add Another Clue Round
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="mt-5 text-xs font-bold text-zinc-600">
+                            Waiting for the host.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+              </div>
+            )}
+
+            {room.game_phase ===
+              "voting" && (
+              <div className="mt-8">
+                <div className="rounded-[2rem] border border-violet-500/20 bg-violet-500/[0.05] p-6">
+                  <div className="text-center">
+                    <div className="text-5xl">🗳️</div>
+
+                    <p className="mt-4 text-xs font-black uppercase tracking-[0.16em] text-violet-300">
+                      {
+                        room.vote_stage ===
+                        "tie_break"
+                          ? `Re-vote • Ballot ${room.vote_ballot_number}`
+                          : `Voting Round ${room.voting_round_number}`
+                      }
+                    </p>
+
+                    <h2 className="mt-2 text-2xl font-black">
+                      Vote privately
+                    </h2>
+
+                    <p className="mt-2 text-sm leading-6 text-zinc-500">
+                      {
+                        room.vote_stage ===
+                        "tie_break"
+                          ? "The previous vote was tied. Vote again — you may choose any active player."
+                          : "Choose the player you suspect. Other players cannot see your vote."
+                      }
+                    </p>
+
+                    <div className="mt-4 rounded-2xl bg-black/20 px-4 py-3 text-sm font-black text-zinc-300">
+                      {room.votes_submitted_count}/{room.votes_required_count} votes submitted
+                    </div>
+
+                    {room.vote_stage ===
+                      "tie_break" &&
+                      tiedVotePlayers.length >
+                        0 && (
+                      <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/[0.07] p-4">
+                        <p className="text-xs font-black uppercase tracking-[0.15em] text-amber-300">
+                          Previous Vote Tied
+                        </p>
+
+                        <p className="mt-2 text-sm font-black leading-6 text-white">
+                          {tiedVotePlayers
+                            .map(
+                              (player) =>
+                                player.name
+                            )
+                            .join(" • ")}
+                        </p>
+
+                        <p className="mt-2 text-xs leading-5 text-zinc-500">
+                          These players tied in the previous ballot. This is a full re-vote, so you can vote for any active player again.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {myRoomPlayer?.is_spectator ? (
+                    <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-center">
+                      <p className="font-black">
+                        You are a spectator
+                      </p>
+                      <p className="mt-2 text-sm text-zinc-500">
+                        Spectators cannot vote.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-6 space-y-3">
+                      {eligibleVotePlayers.map(
+                        (player) => {
+                          const selected =
+                            myVoteTargetId ===
+                            player.id;
+
+                          return (
+                            <button
+                              key={
+                                player.id
+                              }
+                              onClick={() =>
+                                void submitVote(
+                                  player.id
+                                )
+                              }
+                              disabled={
+                                votingBusy
+                              }
+                              className={`flex w-full items-center justify-between rounded-2xl border p-4 text-left ${
+                                selected
+                                  ? "border-violet-500 bg-violet-500/10"
+                                  : "border-white/10 bg-white/[0.03]"
+                              } disabled:opacity-50`}
+                            >
+                              <div>
+                                <p className="font-black">
+                                  {
+                                    player.name
+                                  }
+                                </p>
+
+                                <p className="mt-1 text-xs text-zinc-600">
+                                  {
+                                    player.user_id ===
+                                    userId
+                                      ? "You"
+                                      : "Player"
+                                  }
+                                </p>
+                              </div>
+
+                              <span className="text-sm font-black text-violet-300">
+                                {
+                                  selected
+                                    ? "✓ Voted"
+                                    : "Vote"
+                                }
+                              </span>
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+                  )}
+
+                  {myVoteTargetId && (
+                    <p className="mt-5 text-center text-xs leading-5 text-zinc-600">
+                      Your latest vote is saved. You may change it until everyone has voted.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {room.game_phase ===
+              "result" && (
+              <div className="mt-8">
+                <div className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-7 text-center">
+                  <div className="text-5xl">
+                    {
+                      room.vote_winner
+                        ? "🏁"
+                        : "📣"
+                    }
+                  </div>
+
+                  <h2 className="mt-5 text-2xl font-black">
+                    {
+                      room.vote_winner ===
+                      "players"
+                        ? "Players Win"
+                        : room.vote_winner ===
+                            "imposters"
+                          ? "Imposters Win"
+                          : room.elimination_mode
+                            ? "Player Eliminated"
+                            : room.vote_result_was_imposter
+                              ? "Imposter Caught"
+                              : "Wrong Guess"
+                    }
+                  </h2>
+
+                  {voteResultPlayer && (
+                    <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-5">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-600">
+                        Voting Result
+                      </p>
+
+                      <p className="mt-2 text-2xl font-black">
+                        {
+                          voteResultPlayer.name
+                        }
+                      </p>
+
+                      <p className="mt-2 text-sm font-bold text-zinc-400">
+                        {
+                          room.vote_result_was_imposter
+                            ? "Was an Imposter"
+                            : "Was not an Imposter"
+                        }
+                      </p>
+                    </div>
+                  )}
+
+                  {room.imposters_revealed && (
+                    <div className="mt-6 rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-300">
+                        {
+                          revealedImposterPlayers.length ===
+                          1
+                            ? "The Imposter Was"
+                            : "The Imposters Were"
+                        }
+                      </p>
+
+                      <div className="mt-4 space-y-2">
+                        {revealedImposterPlayers.map(
+                          (player) => (
+                            <p
+                              key={
+                                player.id
+                              }
+                              className="text-2xl font-black"
+                            >
+                              {
+                                player.name
+                              }
+                            </p>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {isHost ? (
+                    <div className="mt-6 grid gap-3">
+                      {!room.vote_winner ? (
+                        <button
+                          onClick={() =>
+                            void continueAfterVoteResult()
+                          }
+                          disabled={
+                            votingBusy
+                          }
+                          className="w-full rounded-2xl bg-violet-600 py-4 font-black disabled:opacity-30"
+                        >
+                          Continue to Next Clue Round
+                        </button>
+                      ) : (
+                        <>
+                          {!room.imposters_revealed && (
+                            <button
+                              onClick={() =>
+                                void revealImposters()
+                              }
+                              disabled={
+                                votingBusy
+                              }
+                              className="w-full rounded-2xl bg-violet-600 py-4 font-black disabled:opacity-30"
+                            >
+                              Reveal Imposter{room.imposter_count === 1 ? "" : "s"}
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() =>
+                              void startNextGame()
+                            }
+                            disabled={
+                              votingBusy ||
+                              clueBusy
+                            }
+                            className="w-full rounded-2xl border border-white/10 py-4 font-black text-zinc-300 disabled:opacity-30"
+                          >
+                            Play Next Game
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-6 text-xs font-bold text-zinc-600">
+                      Waiting for the host.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {room.game_phase ===
+              "finished" && (
+              <div className="mt-8">
+                <div className="rounded-[2rem] border border-emerald-500/20 bg-emerald-500/[0.05] p-7 text-center">
+                  <div className="text-5xl">✅</div>
+
+                  <h2 className="mt-5 text-2xl font-black">
+                    Game complete
+                  </h2>
+
+                  <p className="mt-3 text-sm leading-6 text-zinc-500">
+                    Online Voting was OFF. Make your guess together, then reveal the answer if you want.
+                  </p>
+
+                  {room.imposters_revealed && (
+                    <div className="mt-6 rounded-3xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-violet-300">
+                        {
+                          revealedImposterPlayers.length ===
+                          1
+                            ? "The Imposter Was"
+                            : "The Imposters Were"
+                        }
+                      </p>
+
+                      <div className="mt-4 space-y-2">
+                        {revealedImposterPlayers.map(
+                          (player) => (
+                            <p
+                              key={
+                                player.id
+                              }
+                              className="text-2xl font-black"
+                            >
+                              {
+                                player.name
+                              }
+                            </p>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {isHost ? (
+                    <div className="mt-6 grid gap-3">
+                      {!room.imposters_revealed && (
+                        <button
+                          onClick={() =>
+                            void revealImposters()
+                          }
+                          disabled={
+                            votingBusy
+                          }
+                          className="w-full rounded-2xl bg-violet-600 py-4 font-black disabled:opacity-30"
+                        >
+                          Reveal Imposter{room.imposter_count === 1 ? "" : "s"}
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() =>
+                          void startNextGame()
+                        }
+                        disabled={
+                          clueBusy ||
+                          votingBusy
+                        }
+                        className="w-full rounded-2xl border border-white/10 py-4 font-black text-zinc-300 disabled:opacity-30"
+                      >
+                        Play Next Game
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-5 text-xs font-bold text-zinc-600">
+                      Waiting for the host.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
             {room.game_phase !==
               "preparing" &&
               room.game_phase !==
-                "role_reveal" && (
+                "role_reveal" &&
+              room.game_phase !==
+                "clue" &&
+              room.game_phase !==
+                "voting" &&
+              room.game_phase !==
+                "result" &&
+              room.game_phase !==
+                "finished" && (
               <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/[0.03] p-8 text-center">
                 <div className="text-5xl">🎮</div>
                 <h2 className="mt-5 text-2xl font-black">
