@@ -2723,21 +2723,25 @@ export default function Home() {
 
               </button>
 
-              <div className="rounded-3xl border border-white/10 p-6 opacity-40">
+              <button
+                  onClick={() => {
+                  window.location.href =
+                            "/multiplayer";
+                    }}
+                    className="w-full rounded-3xl border border-cyan-500/40 bg-cyan-500/10 p-6 text-left transition hover:bg-cyan-500/15"
+                  >
+                    <div className="text-3xl">
+                      📲
+                    </div>
 
-                <div className="text-3xl">
-                  📲
-                </div>
+                    <h2 className="mt-5 text-xl font-black">
+                      Multiple Phones
+                    </h2>
 
-                <h2 className="mt-5 text-xl font-black">
-                  Multiple Phones
-                </h2>
-
-                <p className="mt-2 text-sm leading-6 text-zinc-500">
-                  Online rooms, spectators and optional voice chat will come later.
-                </p>
-
-              </div>
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">
+                      Create or join a room on multiple phones with synced roles, clues, voting, spectators and optional voice chat.
+                    </p>
+                  </button>
 
             </div>
 
