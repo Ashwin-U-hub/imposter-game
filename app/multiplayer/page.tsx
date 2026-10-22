@@ -1122,6 +1122,13 @@ export default function MultiplayerPage() {
       new Set()
     );
 
+  // If a microphone is attached while a peer is still negotiating,
+  // remember that the stable connection must be renegotiated afterwards.
+  const voiceNeedsRenegotiationRef =
+    useRef<Set<string>>(
+      new Set()
+    );
+
   const removeVoicePeer =
     useCallback(
       (
@@ -1153,6 +1160,9 @@ export default function MultiplayerPage() {
         );
 
         voiceIncomingOfferInFlightRef.current.delete(
+          remoteUserId
+        );
+        voiceNeedsRenegotiationRef.current.delete(
           remoteUserId
         );
 
@@ -1205,6 +1215,7 @@ export default function MultiplayerPage() {
       voicePendingIceRef.current.clear();
       voiceOfferInFlightRef.current.clear();
       voiceIncomingOfferInFlightRef.current.clear();
+      voiceNeedsRenegotiationRef.current.clear();
 
       const stream =
         voiceLocalStreamRef.current;
@@ -1305,8 +1316,11 @@ export default function MultiplayerPage() {
       peer.addTransceiver(
         "audio",
         {
+          // Do not advertise an outgoing audio sender before a real mic
+          // track exists. addTrack() can reuse this recvonly transceiver
+          // when the player enables their microphone later.
           direction:
-            "sendrecv",
+            "recvonly",
         }
       );
     }
@@ -1363,9 +1377,27 @@ export default function MultiplayerPage() {
 
         if (
           peer.connectionState ===
-            "failed" ||
+          "failed"
+        ) {
+          const remoteName =
+            roomPlayers.find(
+              (player) =>
+                player.user_id === remoteUserId
+            )?.name ?? "another player";
+
+          setVoiceError(
+            `The voice connection to ${remoteName} failed. This network may require a TURN relay.`
+          );
+
+          removeVoicePeer(
+            remoteUserId
+          );
+          return;
+        }
+
+        if (
           peer.connectionState ===
-            "closed"
+          "closed"
         ) {
           removeVoicePeer(
             remoteUserId
@@ -1484,6 +1516,201 @@ export default function MultiplayerPage() {
     }
   }
 
+  async function renegotiateVoicePeer(
+    remoteUserId: string
+  ) {
+    // Only the lexicographically lower user ID creates offers. This keeps
+    // renegotiation deterministic and avoids simultaneous-offer collisions.
+    if (
+      !userId ||
+      userId >= remoteUserId
+    ) {
+      return;
+    }
+
+    const peer =
+      voicePeersRef.current.get(
+        remoteUserId
+      );
+
+    if (
+      !peer ||
+      peer.connectionState === "closed" ||
+      peer.connectionState === "failed"
+    ) {
+      return;
+    }
+
+    if (
+      peer.signalingState !== "stable" ||
+      voiceOfferInFlightRef.current.has(
+        remoteUserId
+      )
+    ) {
+      voiceNeedsRenegotiationRef.current.add(
+        remoteUserId
+      );
+      return;
+    }
+
+    voiceOfferInFlightRef.current.add(
+      remoteUserId
+    );
+
+    try {
+      const offer =
+        await peer.createOffer();
+
+      if (
+        voicePeersRef.current.get(remoteUserId) !== peer ||
+        peer.signalingState !== "stable"
+      ) {
+        voiceNeedsRenegotiationRef.current.add(
+          remoteUserId
+        );
+        return;
+      }
+
+      // Avoid leaving the peer in have-local-offer for an identical SDP.
+      if (
+        offer.sdp &&
+        offer.sdp === peer.localDescription?.sdp
+      ) {
+        return;
+      }
+
+      await peer.setLocalDescription(
+        offer
+      );
+
+      await sendVoiceSignal(
+        "voice-offer",
+        {
+          from: userId,
+          to: remoteUserId,
+          description:
+            peer.localDescription ??
+            offer,
+        }
+      );
+    } catch {
+      setVoiceError(
+        "The microphone changed, but the voice connection could not update. Please toggle the microphone off and on."
+      );
+    } finally {
+      voiceOfferInFlightRef.current.delete(
+        remoteUserId
+      );
+      void flushPendingVoiceRenegotiation(
+        remoteUserId
+      );
+    }
+  }
+
+  async function requestVoiceRenegotiation(
+    remoteUserId: string
+  ) {
+    if (!userId) {
+      return;
+    }
+
+    const peer =
+      voicePeersRef.current.get(
+        remoteUserId
+      );
+
+    if (!peer) {
+      return;
+    }
+
+    if (
+      peer.signalingState !== "stable" ||
+      voiceOfferInFlightRef.current.has(
+        remoteUserId
+      )
+    ) {
+      voiceNeedsRenegotiationRef.current.add(
+        remoteUserId
+      );
+      return;
+    }
+
+    if (userId < remoteUserId) {
+      await renegotiateVoicePeer(
+        remoteUserId
+      );
+      return;
+    }
+
+    try {
+      // The other peer owns offer creation for this pair. Ask it to create
+      // the offer after our new microphone sender has been attached.
+      await sendVoiceSignal(
+        "voice-renegotiate",
+        {
+          from: userId,
+          to: remoteUserId,
+        }
+      );
+    } catch {
+      setVoiceError(
+        "The microphone is on, but the voice update could not be sent. Please retry."
+      );
+    }
+  }
+
+  async function flushPendingVoiceRenegotiation(
+    remoteUserId: string
+  ) {
+    if (
+      !voiceNeedsRenegotiationRef.current.has(
+        remoteUserId
+      )
+    ) {
+      return;
+    }
+
+    const peer =
+      voicePeersRef.current.get(
+        remoteUserId
+      );
+
+    if (
+      !peer ||
+      peer.signalingState !== "stable" ||
+      voiceOfferInFlightRef.current.has(
+        remoteUserId
+      )
+    ) {
+      return;
+    }
+
+    voiceNeedsRenegotiationRef.current.delete(
+      remoteUserId
+    );
+
+    await requestVoiceRenegotiation(
+      remoteUserId
+    );
+  }
+
+  async function handleVoiceRenegotiationRequest(
+    payload: VoiceSignalPayload
+  ) {
+    if (
+      payload.to !== userId ||
+      payload.from === userId ||
+      !userId ||
+      userId >= payload.from
+    ) {
+      return;
+    }
+
+    await renegotiateVoicePeer(
+      payload.from
+    );
+  }
+
   async function handleVoiceOffer(
     payload: VoiceSignalPayload
   ) {
@@ -1546,6 +1773,10 @@ export default function MultiplayerPage() {
             answer,
         }
       );
+
+      await flushPendingVoiceRenegotiation(
+        payload.from
+      );
     } catch {
       removeVoicePeer(
         payload.from
@@ -1576,7 +1807,11 @@ export default function MultiplayerPage() {
         payload.from
       );
 
-    if (!peer) {
+    if (
+      !peer ||
+      peer.signalingState !== "have-local-offer"
+    ) {
+      // Ignore answers for a previous negotiation attempt.
       return;
     }
 
@@ -1588,6 +1823,10 @@ export default function MultiplayerPage() {
       await flushVoiceIce(
         payload.from,
         peer
+      );
+
+      await flushPendingVoiceRenegotiation(
+        payload.from
       );
     } catch {
       removeVoicePeer(
@@ -1608,11 +1847,11 @@ export default function MultiplayerPage() {
     }
 
     const peer =
-      createVoicePeer(
+      voicePeersRef.current.get(
         payload.from
       );
 
-    if (peer.remoteDescription) {
+    if (peer?.remoteDescription) {
       try {
         await peer.addIceCandidate(
           payload.candidate
@@ -1623,14 +1862,18 @@ export default function MultiplayerPage() {
       return;
     }
 
+    // ICE candidates can arrive before their offer over realtime broadcast.
+    // Queue them without constructing a peer until an offer/local offer exists.
     const queued =
       voicePendingIceRef.current.get(
         payload.from
       ) ?? [];
 
-    queued.push(
-      payload.candidate
-    );
+    if (queued.length < 128) {
+      queued.push(
+        payload.candidate
+      );
+    }
 
     voicePendingIceRef.current.set(
       payload.from,
@@ -1806,6 +2049,15 @@ export default function MultiplayerPage() {
           }
         )
         .on(
+          "broadcast",
+          { event: "voice-renegotiate" },
+          ({ payload }) => {
+            void handleVoiceRenegotiationRequest(
+              payload as VoiceSignalPayload
+            );
+          }
+        )
+        .on(
           "presence",
           { event: "sync" },
           () => {
@@ -1911,6 +2163,14 @@ export default function MultiplayerPage() {
       Array.from(
         voicePeersRef.current.entries()
       );
+    const localStream =
+      voiceLocalStreamRef.current;
+
+    if (!localStream) {
+      return peerEntries.map(
+        ([remoteUserId]) => remoteUserId
+      );
+    }
 
     const failedUserIds =
       await Promise.all(
@@ -1932,6 +2192,15 @@ export default function MultiplayerPage() {
                   .find(
                     (transceiver) =>
                       transceiver.receiver.track.kind ===
+                      "audio" &&
+                      transceiver.sender.track?.kind ===
+                      "audio"
+                  ) ??
+                peer
+                  .getTransceivers()
+                  .find(
+                    (transceiver) =>
+                      transceiver.receiver.track.kind ===
                       "audio"
                   );
 
@@ -1941,9 +2210,24 @@ export default function MultiplayerPage() {
                 );
               }
 
-              await audioTransceiver.sender.replaceTrack(
-                track
-              );
+              if (!audioTransceiver.sender.track) {
+                // The peer was negotiated while this player had no mic.
+                // addTrack() reuses the recvonly transceiver when possible,
+                // associates the actual stream, and requires a fresh offer.
+                peer.addTrack(
+                  track,
+                  localStream
+                );
+                await requestVoiceRenegotiation(
+                  remoteUserId
+                );
+              } else if (
+                audioTransceiver.sender.track.id !== track.id
+              ) {
+                await audioTransceiver.sender.replaceTrack(
+                  track
+                );
+              }
 
               return null;
             } catch {
