@@ -278,9 +278,11 @@ type VoiceSignalPayload = {
 function RemoteVoiceAudio({
   stream,
   muted,
+  userId,
 }: {
   stream: MediaStream;
   muted: boolean;
+  userId: string;
 }) {
   const audioRef =
     useRef<HTMLAudioElement | null>(
@@ -318,6 +320,8 @@ function RemoteVoiceAudio({
       ref={audioRef}
       autoPlay
       muted={muted}
+      data-imposter-voice-audio="true"
+      data-imposter-voice-user={userId}
       className="hidden"
     />
   );
@@ -1108,6 +1112,16 @@ export default function MultiplayerPage() {
       >
     >(new Map());
 
+  const voiceOfferInFlightRef =
+    useRef<Set<string>>(
+      new Set()
+    );
+
+  const voiceIncomingOfferInFlightRef =
+    useRef<Set<string>>(
+      new Set()
+    );
+
   const removeVoicePeer =
     useCallback(
       (
@@ -1131,6 +1145,14 @@ export default function MultiplayerPage() {
         }
 
         voicePendingIceRef.current.delete(
+          remoteUserId
+        );
+
+        voiceOfferInFlightRef.current.delete(
+          remoteUserId
+        );
+
+        voiceIncomingOfferInFlightRef.current.delete(
           remoteUserId
         );
 
@@ -1181,6 +1203,8 @@ export default function MultiplayerPage() {
 
       voicePeersRef.current.clear();
       voicePendingIceRef.current.clear();
+      voiceOfferInFlightRef.current.clear();
+      voiceIncomingOfferInFlightRef.current.clear();
 
       const stream =
         voiceLocalStreamRef.current;
@@ -1228,7 +1252,14 @@ export default function MultiplayerPage() {
       );
 
     if (existing) {
-      return existing;
+      if (
+        existing.connectionState !== "failed" &&
+        existing.connectionState !== "closed"
+      ) {
+        return existing;
+      }
+
+      removeVoicePeer(remoteUserId);
     }
 
     const peer =
@@ -1379,7 +1410,10 @@ export default function MultiplayerPage() {
   ) {
     if (
       !userId ||
-      userId >= remoteUserId
+      userId >= remoteUserId ||
+      voiceOfferInFlightRef.current.has(
+        remoteUserId
+      )
     ) {
       return;
     }
@@ -1390,16 +1424,37 @@ export default function MultiplayerPage() {
       );
 
     if (
-      peer.signalingState !==
-        "stable" ||
+      peer.signalingState !== "stable" ||
       peer.localDescription
     ) {
       return;
     }
 
+    voiceOfferInFlightRef.current.add(
+      remoteUserId
+    );
+
     try {
+      // Re-check after acquiring the per-peer lock. Presence can sync
+      // several times while multiple players join the same room.
+      if (
+        voicePeersRef.current.get(remoteUserId) !== peer ||
+        peer.signalingState !== "stable" ||
+        peer.localDescription
+      ) {
+        return;
+      }
+
       const offer =
         await peer.createOffer();
+
+      if (
+        voicePeersRef.current.get(remoteUserId) !== peer ||
+        peer.signalingState !== "stable" ||
+        peer.localDescription
+      ) {
+        return;
+      }
 
       await peer.setLocalDescription(
         offer
@@ -1419,6 +1474,13 @@ export default function MultiplayerPage() {
       removeVoicePeer(
         remoteUserId
       );
+      setVoiceError(
+        "A voice connection could not be negotiated. Please tap the speaker or microphone control to retry."
+      );
+    } finally {
+      voiceOfferInFlightRef.current.delete(
+        remoteUserId
+      );
     }
   }
 
@@ -1428,10 +1490,29 @@ export default function MultiplayerPage() {
     if (
       payload.to !== userId ||
       payload.from === userId ||
-      !payload.description
+      !payload.description ||
+      voiceIncomingOfferInFlightRef.current.has(
+        payload.from
+      )
     ) {
       return;
     }
+
+    const existingPeer =
+      voicePeersRef.current.get(
+        payload.from
+      );
+
+    if (
+      existingPeer?.remoteDescription?.sdp ===
+      payload.description.sdp
+    ) {
+      return;
+    }
+
+    voiceIncomingOfferInFlightRef.current.add(
+      payload.from
+    );
 
     try {
       const peer =
@@ -1467,6 +1548,13 @@ export default function MultiplayerPage() {
       );
     } catch {
       removeVoicePeer(
+        payload.from
+      );
+      setVoiceError(
+        "A voice connection could not be completed. Please toggle the microphone off and on to retry."
+      );
+    } finally {
+      voiceIncomingOfferInFlightRef.current.delete(
         payload.from
       );
     }
@@ -1778,6 +1866,141 @@ export default function MultiplayerPage() {
     }
   }
 
+  function unlockRemoteVoiceAudio(
+    remoteUserId?: string
+  ) {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const audioElements =
+      document.querySelectorAll<HTMLAudioElement>(
+        'audio[data-imposter-voice-audio="true"]'
+      );
+
+    audioElements.forEach((audio) => {
+      if (
+        remoteUserId &&
+        audio.dataset.imposterVoiceUser !==
+          remoteUserId
+      ) {
+        return;
+      }
+
+      // Run play() directly from the user's click handler so mobile
+      // browsers have a chance to unlock incoming audio playback.
+      void audio.play().catch((playError: unknown) => {
+        const name =
+          playError instanceof DOMException
+            ? playError.name
+            : "";
+
+        if (name === "NotAllowedError") {
+          setVoiceError(
+            "Incoming audio is blocked by the browser. Tap the speaker button to enable audio."
+          );
+        }
+      });
+    });
+  }
+
+  async function attachMicrophoneToPeers(
+    track: MediaStreamTrack
+  ) {
+    const peerEntries =
+      Array.from(
+        voicePeersRef.current.entries()
+      );
+
+    const failedUserIds =
+      await Promise.all(
+        peerEntries.map(
+          async ([remoteUserId, peer]) => {
+            try {
+              if (
+                peer.connectionState === "closed" ||
+                peer.connectionState === "failed"
+              ) {
+                throw new Error(
+                  "Voice connection is not active."
+                );
+              }
+
+              const audioTransceiver =
+                peer
+                  .getTransceivers()
+                  .find(
+                    (transceiver) =>
+                      transceiver.receiver.track.kind ===
+                      "audio"
+                  );
+
+              if (!audioTransceiver) {
+                throw new Error(
+                  "Audio transceiver is missing."
+                );
+              }
+
+              await audioTransceiver.sender.replaceTrack(
+                track
+              );
+
+              return null;
+            } catch {
+              return remoteUserId;
+            }
+          }
+        )
+      );
+
+    return failedUserIds.filter(
+      (remoteUserId): remoteUserId is string =>
+        remoteUserId !== null
+    );
+  }
+
+  function getVoicePeerNames(
+    userIds: string[]
+  ) {
+    return userIds.map(
+      (remoteUserId) =>
+        roomPlayers.find(
+          (player) =>
+            player.user_id === remoteUserId
+        )?.name ?? "another player"
+    );
+  }
+
+  async function updateVoicePresence(
+    muted: boolean
+  ) {
+    const channel =
+      voiceChannelRef.current;
+
+    if (!channel) {
+      return;
+    }
+
+    const myName =
+      roomPlayers.find(
+        (player) =>
+          player.user_id === userId
+      )?.name ??
+      "Player";
+
+    try {
+      await channel.track({
+        user_id: userId,
+        name: myName,
+        muted,
+      });
+    } catch {
+      setVoiceError(
+        "Your microphone changed, but voice status could not sync. Please try again."
+      );
+    }
+  }
+
   async function toggleVoiceMic() {
     if (
       !room ||
@@ -1787,18 +2010,29 @@ export default function MultiplayerPage() {
       return;
     }
 
+    // This is a real user gesture; use it to unlock any incoming audio
+    // that the browser may have blocked from autoplaying.
+    unlockRemoteVoiceAudio();
     setVoiceError("");
 
-    /*
-      First tap asks for microphone permission.
-      Later taps simply turn the mic ON/OFF.
-    */
+    const existingTrack =
+      voiceLocalStreamRef.current
+        ?.getAudioTracks()[0] ?? null;
+
     if (
-      !voiceLocalStreamRef.current
+      !voiceLocalStreamRef.current ||
+      !existingTrack ||
+      existingTrack.readyState === "ended"
     ) {
       setVoiceBusy(true);
 
       try {
+        voiceLocalStreamRef.current
+          ?.getTracks()
+          .forEach((track) => track.stop());
+
+        voiceLocalStreamRef.current = null;
+
         if (
           !navigator.mediaDevices ||
           !navigator.mediaDevices.getUserMedia
@@ -1822,65 +2056,34 @@ export default function MultiplayerPage() {
           stream.getAudioTracks()[0];
 
         if (!track) {
+          stream.getTracks().forEach(
+            (mediaTrack) => mediaTrack.stop()
+          );
           throw new Error(
             "No microphone track was available."
           );
         }
 
         track.enabled = true;
+        voiceLocalStreamRef.current = stream;
 
-        voiceLocalStreamRef.current =
-          stream;
-
-        await Promise.all(
-          Array.from(
-            voicePeersRef.current.values()
-          ).map(
-            async (peer) => {
-              const audioTransceiver =
-                peer
-                  .getTransceivers()
-                  .find(
-                    (transceiver) =>
-                      transceiver
-                        .receiver
-                        .track
-                        .kind ===
-                      "audio"
-                  );
-
-              if (
-                audioTransceiver
-              ) {
-                await audioTransceiver
-                  .sender
-                  .replaceTrack(
-                    track
-                  );
-              }
-            }
-          )
-        );
+        // A single failed peer must not abort attachment to every other
+        // peer or leave the UI claiming the microphone is still muted.
+        const failedUserIds =
+          await attachMicrophoneToPeers(track);
 
         setVoiceMuted(false);
+        await updateVoicePresence(false);
 
-        const channel =
-          voiceChannelRef.current;
+        if (failedUserIds.length > 0) {
+          const names =
+            getVoicePeerNames(failedUserIds);
 
-        if (channel) {
-          const myName =
-            roomPlayers.find(
-              (player) =>
-                player.user_id ===
-                userId
-            )?.name ??
-            "Player";
-
-          await channel.track({
-            user_id: userId,
-            name: myName,
-            muted: false,
-          });
+          setVoiceError(
+            `Your microphone is on, but the connection to ${names.join(", ")} could not attach the mic. Toggle the mic off and on to retry.`
+          );
+        } else {
+          setVoiceError("");
         }
       } catch (microphoneError) {
         const message =
@@ -1890,16 +2093,8 @@ export default function MultiplayerPage() {
           );
 
         if (
-          message
-            .toLowerCase()
-            .includes(
-              "permission"
-            ) ||
-          message
-            .toLowerCase()
-            .includes(
-              "notallowed"
-            )
+          message.toLowerCase().includes("permission") ||
+          message.toLowerCase().includes("notallowed")
         ) {
           setVoiceError(
             "Microphone permission was blocked. Allow microphone access for this site and tap the mic again."
@@ -1917,41 +2112,50 @@ export default function MultiplayerPage() {
     const nextMuted =
       !voiceMuted;
 
-    voiceLocalStreamRef.current
-      .getAudioTracks()
+    const localStream =
+      voiceLocalStreamRef.current;
+
+    localStream
+      ?.getAudioTracks()
       .forEach((track) => {
-        track.enabled =
-          !nextMuted;
+        track.enabled = !nextMuted;
       });
 
-    setVoiceMuted(
-      nextMuted
-    );
+    setVoiceMuted(nextMuted);
 
-    const channel =
-      voiceChannelRef.current;
+    if (!nextMuted) {
+      // Re-attach on every unmute. This repairs peers that were present
+      // when the microphone was first enabled but did not accept the track.
+      const track =
+        localStream?.getAudioTracks()[0];
 
-    if (channel) {
-      const myName =
-        roomPlayers.find(
-          (player) =>
-            player.user_id ===
-            userId
-        )?.name ??
-        "Player";
+      if (track) {
+        const failedUserIds =
+          await attachMicrophoneToPeers(track);
 
-      await channel.track({
-        user_id: userId,
-        name: myName,
-        muted: nextMuted,
-      });
+        if (failedUserIds.length > 0) {
+          const names =
+            getVoicePeerNames(failedUserIds);
+
+          setVoiceError(
+            `Your microphone is on, but the connection to ${names.join(", ")} still needs to reconnect.`
+          );
+        } else {
+          setVoiceError("");
+        }
+      }
     }
-  }
 
+    await updateVoicePresence(nextMuted);
+  }
 
   function toggleVoiceSpeaker() {
     if (!voiceActive) {
       return;
+    }
+
+    if (voiceSpeakerMuted) {
+      unlockRemoteVoiceAudio();
     }
 
     setVoiceSpeakerMuted(
@@ -1969,6 +2173,17 @@ export default function MultiplayerPage() {
         userId
     ) {
       return;
+    }
+
+    if (
+      locallyMutedVoiceUsers.includes(
+        remoteUserId
+      ) &&
+      !voiceSpeakerMuted
+    ) {
+      unlockRemoteVoiceAudio(
+        remoteUserId
+      );
     }
 
     setLocallyMutedVoiceUsers(
@@ -2002,6 +2217,8 @@ export default function MultiplayerPage() {
     if (!voiceActive) {
       return;
     }
+
+    unlockRemoteVoiceAudio();
 
     setVoiceSpeakerMuted(
       false
@@ -5618,6 +5835,7 @@ export default function MultiplayerPage() {
           (item) => (
             <RemoteVoiceAudio
               key={item.userId}
+              userId={item.userId}
               stream={item.stream}
               muted={
                 voiceSpeakerMuted ||
